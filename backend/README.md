@@ -46,10 +46,11 @@ MediaPipe FaceLandmarker로 얼굴 부위(이마/양볼/코)를 찾고, 각 부�
 python manage.py download_face_model   # ml_models/face_landmarker.task 다운로드 (최초 1회, gitignore됨)
 ```
 
-- `POST /api/face-analysis/` — `multipart/form-data`로 `image` 업로드 → `{redness_score, severity, region_scores}` 저장 + 반환
+- `POST /api/face-analysis/` — `multipart/form-data`로 `image` 업로드 → `{redness_score, severity, region_scores, lighting_corrected, excluded_regions}` 저장 + 반환
 - `GET /api/face-analysis/` — 로그인 사용자의 분석 이력 조회
 - 얼굴을 못 찾으면 `422`와 안내 메시지 반환
 
 **주의**
 - `A_CHANNEL_LOW` / `A_CHANNEL_HIGH` / `SEVERITY_BINS` (analysis.py 상단)는 실측 데이터 없이 잡은 placeholder 값입니다. 실제 얼굴 사진이 모이면 재보정 필요.
 - 관자놀이/턱 부위를 기준으로 화이트밸런스(조명 색온도) 보정을 하지만, **고르지 않은 강한 조명(예: 정면 플래시로 이마·코만 밝고 볼은 그늘짐)까지는 보정하지 못합니다.** 이런 사진은 부위별 점수가 0으로 뭉치거나 왜곡될 수 있음 — 데모/촬영 시 가급적 창문광처럼 고르게 퍼지는 조명 사용 권장. 응답의 `lighting_corrected`가 `false`면 보정 기준(관자놀이/턱)조차 프레임 밖이라 보정이 아예 적용되지 않은 것.
+- 볼 ROI는 눈꼬리·입꼬리 중점을 기준으로 잡아 얼굴이 돌아간(정면이 아닌) 사진에도 어느 정도 대응하지만, 극단적인 각도에서는 여전히 어긋날 수 있음. 그런 경우 대비로 ROI가 너무 어두우면(머리카락/배경 오인 가능성) 해당 부위를 점수에서 제외하고 `excluded_regions`에 표기함.

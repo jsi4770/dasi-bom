@@ -41,5 +41,9 @@ class FaceAnalysisListCreateView(generics.ListCreateAPIView):
             region_scores=result['region_scores'],
         )
         output = FaceAnalysisSerializer(analysis, context=self.get_serializer_context())
-        payload = {**output.data, 'lighting_corrected': result['lighting_corrected']}
+        payload = {
+            **output.data,
+            'lighting_corrected': result['lighting_corrected'],
+            'excluded_regions': result['excluded_regions'],
+        }
         return Response(payload, status=status.HTTP_201_CREATED)

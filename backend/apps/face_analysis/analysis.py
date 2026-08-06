@@ -34,6 +34,14 @@ FOREHEAD_TOP = 10
 CHIN = 152
 EYE_A_OUTER = 33
 EYE_B_OUTER = 263
+MOUTH_CORNER_A = 61   # same side as EYE_A_OUTER
+MOUTH_CORNER_B = 291  # same side as EYE_B_OUTER
+
+# Below this CIE L* (0-100), a ROI is treated as "probably not skin" (hair,
+# deep shadow, background) rather than scored -- this matters most for
+# turned/angled faces, where a fixed eye-relative offset can drift onto
+# hair for the far cheek instead of skin.
+MIN_SKIN_LIGHTNESS = 20.0
 
 # After gray-world correction against the temple reference, 0 means "as red
 # as the subject's own temples in this photo". Placeholder calibration for
@@ -111,15 +119,26 @@ def _gray_world_white_balance(rgb_array, reference_pixels):
     return np.clip(balanced, 0, 255).astype(np.uint8)
 
 
+def _lab_channels(rgb_patch):
+    lab = cv2.cvtColor(rgb_patch, cv2.COLOR_RGB2LAB).astype(np.float32)
+    lightness = lab[:, :, 0] / 255.0 * 100.0
+    a_signed = lab[:, :, 1] - 128.0
+    return lightness, a_signed
+
+
 def _redness_index(rgb_patch):
     """Median CIE Lab a* (signed, neutral=0) of a skin patch. Higher = redder.
 
     Median (not mean) so a handful of blown-out specular-highlight pixels
     (oily nose/forehead shine) don't drag the whole ROI's reading around.
     """
-    lab = cv2.cvtColor(rgb_patch, cv2.COLOR_RGB2LAB).astype(np.float32)
-    a_signed = lab[:, :, 1] - 128.0
+    _, a_signed = _lab_channels(rgb_patch)
     return float(np.median(a_signed))
+
+
+def _looks_like_skin(rgb_patch):
+    lightness, _ = _lab_channels(rgb_patch)
+    return float(np.median(lightness)) >= MIN_SKIN_LIGHTNESS
 
 
 def _score_from_index(a_signed_mean):
@@ -156,12 +175,13 @@ def analyze_face_redness(image_file):
     chin = _landmark_px(landmarks[CHIN], width, height)
     eye_a = _landmark_px(landmarks[EYE_A_OUTER], width, height)
     eye_b = _landmark_px(landmarks[EYE_B_OUTER], width, height)
+    mouth_a = _landmark_px(landmarks[MOUTH_CORNER_A], width, height)
+    mouth_b = _landmark_px(landmarks[MOUTH_CORNER_B], width, height)
 
     inter_eye_dist = float(np.linalg.norm(eye_a - eye_b))
     roi_half = max(inter_eye_dist * 0.18, 8)
 
     eye_mid_y = (eye_a[1] + eye_b[1]) / 2
-    mid_face_y = (eye_mid_y + chin[1]) / 2
 
     # Reference candidates for gray-world correction: same photo/lighting,
     # but outside the classic flush pattern (forehead/nose/cheeks) and
@@ -185,17 +205,27 @@ def analyze_face_redness(image_file):
         else rgb_array
     )
 
+    # Cheek centers: midpoint between the eye's outer corner and the
+    # same-side mouth corner. Both are real surface-following landmarks, so
+    # this tracks a turned/angled face correctly -- a fixed sideways offset
+    # from the eye alone (the previous approach) assumes a frontal face and
+    # can drift onto hair for the cheek facing away from the camera.
     regions = {
         'forehead': (nose[0], (forehead_top[1] + eye_mid_y) / 2),
-        'left_cheek': (eye_a[0] - inter_eye_dist * 0.35, mid_face_y),
-        'right_cheek': (eye_b[0] + inter_eye_dist * 0.35, mid_face_y),
+        'left_cheek': ((eye_a[0] + mouth_a[0]) / 2, (eye_a[1] + mouth_a[1]) / 2),
+        'right_cheek': ((eye_b[0] + mouth_b[0]) / 2, (eye_b[1] + mouth_b[1]) / 2),
         'nose': (nose[0], nose[1]),
     }
 
     region_scores = {}
+    excluded_regions = []
     for name, center in regions.items():
         patch = _crop_square(balanced, center, roi_half)
         if patch is None or patch.size == 0:
+            excluded_regions.append(name)
+            continue
+        if not _looks_like_skin(patch):
+            excluded_regions.append(name)
             continue
         region_scores[name] = round(_score_from_index(_redness_index(patch)), 1)
 
@@ -209,4 +239,5 @@ def analyze_face_redness(image_file):
         'severity': _severity_from_score(overall_score),
         'region_scores': region_scores,
         'lighting_corrected': lighting_corrected,
+        'excluded_regions': excluded_regions,
     }
