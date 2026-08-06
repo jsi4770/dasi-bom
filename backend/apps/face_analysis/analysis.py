@@ -87,6 +87,23 @@ def _landmark_px(landmark, width, height):
     return np.array([landmark.x * width, landmark.y * height])
 
 
+def _cheek_center(nose, eye, mouth, width, height, margin):
+    """Cheek ROI center, preferring the eye+mouth-corner midpoint but
+    falling back to a nose->mouth-corner extension when the eye landmark
+    isn't usably in frame (e.g. a tight crop showing only nose/mouth/chin,
+    where the cheek is clearly visible but the eye above it is not).
+
+    The fallback assumes a roughly frontal face -- it's less precise than
+    the eye-anchored version -- so it's only used when the eye anchor
+    isn't available, not as the default.
+    """
+    if _fully_in_frame(eye, width, height, margin) and _fully_in_frame(mouth, width, height, margin):
+        return (eye[0] + mouth[0]) / 2, (eye[1] + mouth[1]) / 2
+    if _fully_in_frame(nose, width, height, margin) and _fully_in_frame(mouth, width, height, margin):
+        return mouth[0] + (mouth[0] - nose[0]) * 0.25, mouth[1] + (mouth[1] - nose[1]) * 0.25
+    return None
+
+
 def _fully_in_frame(point, width, height, margin):
     """True if a point sits far enough inside the photo that a roi_half-sized
     square around it wouldn't need clipping.
@@ -220,27 +237,37 @@ def analyze_face_redness(image_file):
         else rgb_array
     )
 
-    # Cheek centers: midpoint between the eye's outer corner and the
-    # same-side mouth corner. Both are real surface-following landmarks, so
-    # this tracks a turned/angled face correctly -- a fixed sideways offset
-    # from the eye alone (the previous approach) assumes a frontal face and
-    # can drift onto hair for the cheek facing away from the camera.
-    #
-    # Each region also lists the anchor landmarks it depends on -- if the
-    # face is turned enough that one of those anchors is barely (or not at
-    # all) in the photo, the region is skipped instead of scored from a
-    # clipped, unrepresentative sliver of pixels.
-    regions = {
+    # forehead/nose: listed with the anchor landmarks they depend on -- if
+    # the face is turned/cropped enough that one of those anchors is barely
+    # (or not at all) in the photo, the region is skipped instead of being
+    # scored from a clipped, unrepresentative sliver of pixels.
+    fixed_regions = {
         'forehead': ((nose[0], (forehead_top[1] + eye_mid_y) / 2), (nose, forehead_top, eye_a, eye_b)),
-        'left_cheek': (((eye_a[0] + mouth_a[0]) / 2, (eye_a[1] + mouth_a[1]) / 2), (eye_a, mouth_a)),
-        'right_cheek': (((eye_b[0] + mouth_b[0]) / 2, (eye_b[1] + mouth_b[1]) / 2), (eye_b, mouth_b)),
         'nose': ((nose[0], nose[1]), (nose,)),
     }
 
     region_scores = {}
     excluded_regions = []
-    for name, (center, anchors) in regions.items():
+    for name, (center, anchors) in fixed_regions.items():
         if not all(_fully_in_frame(a, width, height, roi_half) for a in anchors):
+            excluded_regions.append(name)
+            continue
+        patch = _crop_square(balanced, center, roi_half)
+        if patch is None or patch.size == 0:
+            excluded_regions.append(name)
+            continue
+        if not _looks_like_skin(patch):
+            excluded_regions.append(name)
+            continue
+        region_scores[name] = round(_score_from_index(_redness_index(patch)), 1)
+
+    # Cheeks: eye+mouth-corner midpoint when the eye is usable, else a
+    # nose->mouth-corner fallback (see _cheek_center) so a tight crop that
+    # shows nose/mouth/cheeks but not the eyes above them still gets scored
+    # instead of being excluded just because the eye landmark is missing.
+    for name, eye, mouth in (('left_cheek', eye_a, mouth_a), ('right_cheek', eye_b, mouth_b)):
+        center = _cheek_center(nose, eye, mouth, width, height, roi_half)
+        if center is None:
             excluded_regions.append(name)
             continue
         patch = _crop_square(balanced, center, roi_half)
