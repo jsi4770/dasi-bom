@@ -136,7 +136,15 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+# Face analysis (apps.face_analysis)
+
+FACE_LANDMARKER_MODEL_PATH = BASE_DIR / 'ml_models' / 'face_landmarker.task'
 
 
 # Django REST Framework
