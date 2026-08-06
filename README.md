@@ -39,6 +39,16 @@
 
 기본적으로 목업 데이터를 구축해서 사용하되, Google Health 연동과 얼굴 사진 분석 기능은 실제로 구현한다. 단, MVP 시연에서는 목업 데이터(사전 준비된 얼굴 사진·생활 정보)로 심사위원이 직접 연동하지 않아도 되게 한다.
 
+## 프로젝트 구조
+
+```
+dasi-bom/
+├── app/        # React Native(Expo) 클라이언트
+└── backend/    # Django REST API 서버
+```
+
+각 디렉토리의 세부 실행 방법은 `app/README.md`, `backend/README.md` 참고.
+
 ## 기술 스택
 
 | 영역 | 기술 |

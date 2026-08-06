@@ -1,6 +1,9 @@
 # macOS
 .DS_Store
 
+# oh-my-claudecode local session state
+.omc/
+
 # Python / Django
 __pycache__/
 *.pyc
