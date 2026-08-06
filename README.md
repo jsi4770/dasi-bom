@@ -71,14 +71,32 @@ dasi-bom/
 
 ## 브랜치 전략
 
-- **기본 브랜치는 `develop`** — 팀원들은 각자 작업을 `develop`에 커밋/푸시
+- **기본 브랜치는 `develop`** — 팀원들은 `develop`에서 기능 브랜치를 따서 작업 후 `develop`에 PR/머지
 - `main`은 배포·심사용 안정 브랜치. `develop` → `main`은 PR을 통해서만 반영되며, 리뷰 승인 1건이 있어야 머지 가능 (직접 push·강제 push·삭제 불가)
-- 팀원 초대 후에는 기능 단위로 나눌 경우 `develop`에서 `feature/*` 브랜치를 따서 작업 후 `develop`에 PR/머지하는 것을 권장
+
+### 브랜치 네이밍 규칙
+
+**이름·역할이 아니라 구현하는 기능/작업 기준**으로 짓습니다. `develop`에서 분기.
+
+```
+<타입>/<기능-설명>
+```
+
+- `feature/<기능-설명>` — 새 기능 (예: `feature/symptom-log`, `feature/chatbot-voice`, `feature/face-analysis`, `feature/med-reminder`)
+- `fix/<버그-설명>` — 버그 수정 (예: `fix/login-crash`)
+- `chore/<작업-설명>` — 설정·문서·리팩터링 등 (예: `chore/ci-setup`)
+
+규칙: 소문자, 단어 사이는 `-`, 영문 키워드 권장(도구 호환). 담당자 이름은 브랜치명에 넣지 않고 PR 작성자로 자연히 드러나게 함.
 
 ```bash
 git clone https://github.com/jsi4770/dasi-bom.git
 cd dasi-bom
-git checkout develop   # 기본 작업 브랜치
+git checkout develop
+git checkout -b feature/symptom-log   # develop에서 기능 브랜치 생성
+
+# 작업 후
+git push -u origin feature/symptom-log
+gh pr create --base develop --head feature/symptom-log
 ```
 
 `develop`이 어느 정도 쌓이면 리뷰 후 PR로 `main`에 반영:
