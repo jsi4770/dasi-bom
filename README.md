@@ -68,3 +68,21 @@ dasi-bom/
 | 박소정 | 챗봇 |
 | 조수인 | 얼굴 사진 분석 |
 | 허서영 | 사용자 체크·증상 분석 |
+
+## 브랜치 전략
+
+- **기본 브랜치는 `develop`** — 팀원들은 각자 작업을 `develop`에 커밋/푸시
+- `main`은 배포·심사용 안정 브랜치. `develop` → `main`은 PR을 통해서만 반영되며, 리뷰 승인 1건이 있어야 머지 가능 (직접 push·강제 push·삭제 불가)
+- 팀원 초대 후에는 기능 단위로 나눌 경우 `develop`에서 `feature/*` 브랜치를 따서 작업 후 `develop`에 PR/머지하는 것을 권장
+
+```bash
+git clone https://github.com/jsi4770/dasi-bom.git
+cd dasi-bom
+git checkout develop   # 기본 작업 브랜치
+```
+
+`develop`이 어느 정도 쌓이면 리뷰 후 PR로 `main`에 반영:
+
+```bash
+gh pr create --base main --head develop --title "릴리즈: ..."
+```
