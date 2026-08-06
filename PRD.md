@@ -83,5 +83,6 @@ _TBD — 화면 와이어프레임/디자인 확정되면 채우기_
 
 | 날짜 | 작성자 | 브랜치/PR | 내용 |
 | --- | --- | --- | --- |
+| 2026-08-07 | 조수인 | `fix/face-analysis-lighting-bias` | 실사진 테스트에서 이마·코 점수가 항상 볼보다 높게 나오는 문제 발견(조명 편향). 관자놀이/턱을 기준점으로 삼는 화이트밸런스 보정 추가 + 하이라이트에 강한 median 기반 점수 계산으로 수정. 단, 정면 플래시처럼 얼굴 안에서도 밝기 편차가 큰 사진은 여전히 부정확 — README에 촬영 가이드(고른 조명 권장) 명시, 응답에 `lighting_corrected` 플래그 추가 |
 | 2026-08-07 | 조수인 | `feature/face-analysis` | 얼굴 홍조 분석 MVP 구현: MediaPipe FaceLandmarker로 이마/양볼/코 ROI 추출 + Lab a\* 채널 기반 규칙형 점수화, `/api/face-analysis/` 업로드·조회 API, 모델 다운로드 커맨드. Django 6.1 → DRF 비호환 발견해 5.2 LTS로 다운그레이드 |
 | 2026-08-06 | - | `develop` | 레포 초기 세팅: Expo(app) + Django(backend) 프로젝트 구조, 브랜치 전략(develop/main) 및 네이밍 규칙 문서화 |

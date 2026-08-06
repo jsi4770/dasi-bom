@@ -50,4 +50,6 @@ python manage.py download_face_model   # ml_models/face_landmarker.task 다운�
 - `GET /api/face-analysis/` — 로그인 사용자의 분석 이력 조회
 - 얼굴을 못 찾으면 `422`와 안내 메시지 반환
 
-**주의**: `A_CHANNEL_LOW` / `A_CHANNEL_HIGH` / `SEVERITY_BINS` (analysis.py 상단)는 실측 데이터 없이 잡은 placeholder 값입니다. 실제 얼굴 사진이 모이면 재보정 필요.
+**주의**
+- `A_CHANNEL_LOW` / `A_CHANNEL_HIGH` / `SEVERITY_BINS` (analysis.py 상단)는 실측 데이터 없이 잡은 placeholder 값입니다. 실제 얼굴 사진이 모이면 재보정 필요.
+- 관자놀이/턱 부위를 기준으로 화이트밸런스(조명 색온도) 보정을 하지만, **고르지 않은 강한 조명(예: 정면 플래시로 이마·코만 밝고 볼은 그늘짐)까지는 보정하지 못합니다.** 이런 사진은 부위별 점수가 0으로 뭉치거나 왜곡될 수 있음 — 데모/촬영 시 가급적 창문광처럼 고르게 퍼지는 조명 사용 권장. 응답의 `lighting_corrected`가 `false`면 보정 기준(관자놀이/턱)조차 프레임 밖이라 보정이 아예 적용되지 않은 것.

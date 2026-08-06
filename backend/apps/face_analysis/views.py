@@ -1,23 +1,30 @@
-from rest_framework import permissions, status
+from rest_framework import generics, permissions, status
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
 from .analysis import NoFaceDetectedError, analyze_face_redness
 from .models import FaceAnalysis
 from .serializers import FaceAnalysisSerializer, FaceAnalysisUploadSerializer
 
 
-class FaceAnalysisListCreateView(APIView):
+class FaceAnalysisListCreateView(generics.ListCreateAPIView):
+    """GenericAPIView (not a bare APIView) so DRF's browsable API can
+    introspect get_serializer_class() and render the image upload form."""
+
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser]
+    queryset = FaceAnalysis.objects.all()
 
-    def get(self, request):
-        analyses = FaceAnalysis.objects.filter(user=request.user)
-        return Response(FaceAnalysisSerializer(analyses, many=True).data)
+    def get_queryset(self):
+        return FaceAnalysis.objects.filter(user=self.request.user)
 
-    def post(self, request):
-        upload = FaceAnalysisUploadSerializer(data=request.data)
+    def get_serializer_class(self):
+        if self.request.method == 'POST':
+            return FaceAnalysisUploadSerializer
+        return FaceAnalysisSerializer
+
+    def create(self, request, *args, **kwargs):
+        upload = self.get_serializer(data=request.data)
         upload.is_valid(raise_exception=True)
         image = upload.validated_data['image']
 
@@ -33,4 +40,6 @@ class FaceAnalysisListCreateView(APIView):
             severity=result['severity'],
             region_scores=result['region_scores'],
         )
-        return Response(FaceAnalysisSerializer(analysis).data, status=status.HTTP_201_CREATED)
+        output = FaceAnalysisSerializer(analysis, context=self.get_serializer_context())
+        payload = {**output.data, 'lighting_corrected': result['lighting_corrected']}
+        return Response(payload, status=status.HTTP_201_CREATED)

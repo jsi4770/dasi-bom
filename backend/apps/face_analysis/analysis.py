@@ -2,9 +2,12 @@
 
 Pipeline: MediaPipe FaceLandmarker locates a handful of well-known face
 landmarks (nose tip, forehead, chin, eye corners) -> those anchor small
-square ROIs over forehead / cheeks / nose -> each ROI's mean CIE Lab a*
-channel is used as a redness index (the same channel used in dermatology
-colorimetry for erythema, e.g. Mexameter/Chromameter-style measurements).
+square ROIs over forehead / cheeks / nose, plus two temple ROIs used only
+as a gray-world white-balance reference (cancels the photo's lighting
+color cast without self-canceling the very regions being scored) -> each
+scored ROI's median CIE Lab a* channel is used as a redness index (the
+same channel used in dermatology colorimetry for erythema, e.g.
+Mexameter/Chromameter-style measurements).
 
 No training is involved yet, so this is intentionally simple and
 explainable. The calibration constants below are placeholders based on
@@ -32,10 +35,12 @@ CHIN = 152
 EYE_A_OUTER = 33
 EYE_B_OUTER = 263
 
-# CIE Lab a* channel (signed, 0 = neutral) placeholder calibration range for
-# skin erythema. Recalibrate once real labeled photos are available.
-A_CHANNEL_LOW = 8.0
-A_CHANNEL_HIGH = 25.0
+# After gray-world correction against the temple reference, 0 means "as red
+# as the subject's own temples in this photo". Placeholder calibration for
+# how far above that a region needs to be to count as mild/severe redness --
+# recalibrate once real labeled photos are available.
+A_CHANNEL_LOW = 0.0
+A_CHANNEL_HIGH = 15.0
 
 SEVERITY_BINS = (
     (20, 'normal'),
@@ -84,11 +89,37 @@ def _crop_square(rgb_array, center, half_size):
     return rgb_array[y0:y1, x0:x1]
 
 
+def _gray_world_white_balance(rgb_array, reference_pixels):
+    """Cancel the ambient light's color cast (gray-world assumption) using
+    a reference patch that is NOT one of the regions we later score.
+
+    Without this, indoor lighting alone (warm bulbs, and the nose/forehead
+    simply catching more direct light than the cheeks) reads as "redness"
+    since it skews the whole face toward higher R relative to G/B -- the
+    forehead/nose being closer to the light source made them score highest
+    even on faces with no visible flushing.
+
+    The reference MUST be disjoint from the scored ROIs: gray-world forces
+    the reference patch's own average to become neutral, so if the
+    reference were the same pixels (or the whole photo, which is mostly
+    face) we're scoring, every score collapses to ~0 by construction.
+    """
+    means = reference_pixels.reshape(-1, 3).astype(np.float32).mean(axis=0)
+    gray = means.mean()
+    scale = gray / np.clip(means, 1.0, None)
+    balanced = rgb_array.astype(np.float32) * scale
+    return np.clip(balanced, 0, 255).astype(np.uint8)
+
+
 def _redness_index(rgb_patch):
-    """Mean CIE Lab a* (signed, neutral=0) of a skin patch. Higher = redder."""
+    """Median CIE Lab a* (signed, neutral=0) of a skin patch. Higher = redder.
+
+    Median (not mean) so a handful of blown-out specular-highlight pixels
+    (oily nose/forehead shine) don't drag the whole ROI's reading around.
+    """
     lab = cv2.cvtColor(rgb_patch, cv2.COLOR_RGB2LAB).astype(np.float32)
     a_signed = lab[:, :, 1] - 128.0
-    return float(a_signed.mean())
+    return float(np.median(a_signed))
 
 
 def _score_from_index(a_signed_mean):
@@ -132,6 +163,28 @@ def analyze_face_redness(image_file):
     eye_mid_y = (eye_a[1] + eye_b[1]) / 2
     mid_face_y = (eye_mid_y + chin[1]) / 2
 
+    # Reference candidates for gray-world correction: same photo/lighting,
+    # but outside the classic flush pattern (forehead/nose/cheeks) and
+    # disjoint from the ROIs scored below. Temples are tried first but are
+    # frequently cropped out of tight selfie-style photos, so the chin is
+    # kept as a fallback that's almost always still in frame.
+    reference_centers = (
+        (eye_a[0] - inter_eye_dist * 0.75, eye_mid_y),
+        (eye_b[0] + inter_eye_dist * 0.75, eye_mid_y),
+        (nose[0], chin[1] - roi_half * 0.5),
+    )
+    reference_patches = [
+        patch.reshape(-1, 3)
+        for patch in (_crop_square(rgb_array, c, roi_half) for c in reference_centers)
+        if patch is not None and patch.size > 0
+    ]
+    lighting_corrected = bool(reference_patches)
+    balanced = (
+        _gray_world_white_balance(rgb_array, np.concatenate(reference_patches))
+        if reference_patches
+        else rgb_array
+    )
+
     regions = {
         'forehead': (nose[0], (forehead_top[1] + eye_mid_y) / 2),
         'left_cheek': (eye_a[0] - inter_eye_dist * 0.35, mid_face_y),
@@ -141,7 +194,7 @@ def analyze_face_redness(image_file):
 
     region_scores = {}
     for name, center in regions.items():
-        patch = _crop_square(rgb_array, center, roi_half)
+        patch = _crop_square(balanced, center, roi_half)
         if patch is None or patch.size == 0:
             continue
         region_scores[name] = round(_score_from_index(_redness_index(patch)), 1)
@@ -155,4 +208,5 @@ def analyze_face_redness(image_file):
         'redness_score': overall_score,
         'severity': _severity_from_score(overall_score),
         'region_scores': region_scores,
+        'lighting_corrected': lighting_corrected,
     }
