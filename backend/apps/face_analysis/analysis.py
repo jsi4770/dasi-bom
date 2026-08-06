@@ -87,6 +87,21 @@ def _landmark_px(landmark, width, height):
     return np.array([landmark.x * width, landmark.y * height])
 
 
+def _fully_in_frame(point, width, height, margin):
+    """True if a point sits far enough inside the photo that a roi_half-sized
+    square around it wouldn't need clipping.
+
+    MediaPipe still emits a landmark for a side of the face that's mostly
+    (or fully) out of frame -- it extrapolates from the visible portion, so
+    the coordinate can even land past the image edge. Using such a landmark
+    as an ROI anchor doesn't fail loudly: _crop_square just clips it to a
+    thin, unrepresentative sliver that can still look skin-toned and pass
+    _looks_like_skin. Reject those landmarks before they anchor anything.
+    """
+    x, y = point
+    return margin <= x <= width - margin and margin <= y <= height - margin
+
+
 def _crop_square(rgb_array, center, half_size):
     height, width, _ = rgb_array.shape
     cx, cy = center
@@ -210,16 +225,24 @@ def analyze_face_redness(image_file):
     # this tracks a turned/angled face correctly -- a fixed sideways offset
     # from the eye alone (the previous approach) assumes a frontal face and
     # can drift onto hair for the cheek facing away from the camera.
+    #
+    # Each region also lists the anchor landmarks it depends on -- if the
+    # face is turned enough that one of those anchors is barely (or not at
+    # all) in the photo, the region is skipped instead of scored from a
+    # clipped, unrepresentative sliver of pixels.
     regions = {
-        'forehead': (nose[0], (forehead_top[1] + eye_mid_y) / 2),
-        'left_cheek': ((eye_a[0] + mouth_a[0]) / 2, (eye_a[1] + mouth_a[1]) / 2),
-        'right_cheek': ((eye_b[0] + mouth_b[0]) / 2, (eye_b[1] + mouth_b[1]) / 2),
-        'nose': (nose[0], nose[1]),
+        'forehead': ((nose[0], (forehead_top[1] + eye_mid_y) / 2), (nose, forehead_top, eye_a, eye_b)),
+        'left_cheek': (((eye_a[0] + mouth_a[0]) / 2, (eye_a[1] + mouth_a[1]) / 2), (eye_a, mouth_a)),
+        'right_cheek': (((eye_b[0] + mouth_b[0]) / 2, (eye_b[1] + mouth_b[1]) / 2), (eye_b, mouth_b)),
+        'nose': ((nose[0], nose[1]), (nose,)),
     }
 
     region_scores = {}
     excluded_regions = []
-    for name, center in regions.items():
+    for name, (center, anchors) in regions.items():
+        if not all(_fully_in_frame(a, width, height, roi_half) for a in anchors):
+            excluded_regions.append(name)
+            continue
         patch = _crop_square(balanced, center, roi_half)
         if patch is None or patch.size == 0:
             excluded_regions.append(name)
