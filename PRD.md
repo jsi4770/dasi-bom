@@ -83,4 +83,5 @@ _TBD — 화면 와이어프레임/디자인 확정되면 채우기_
 
 | 날짜 | 작성자 | 브랜치/PR | 내용 |
 | --- | --- | --- | --- |
+| 2026-08-07 | 조수인 | `feature/face-analysis` | 얼굴 홍조 분석 MVP 구현: MediaPipe FaceLandmarker로 이마/양볼/코 ROI 추출 + Lab a\* 채널 기반 규칙형 점수화, `/api/face-analysis/` 업로드·조회 API, 모델 다운로드 커맨드. Django 6.1 → DRF 비호환 발견해 5.2 LTS로 다운그레이드 |
 | 2026-08-06 | - | `develop` | 레포 초기 세팅: Expo(app) + Django(backend) 프로젝트 구조, 브랜치 전략(develop/main) 및 네이밍 규칙 문서화 |

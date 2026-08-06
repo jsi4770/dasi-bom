@@ -16,6 +16,7 @@ db.sqlite3
 media/
 staticfiles/
 .env
+ml_models/
 
 # Node / React Native
 node_modules/
