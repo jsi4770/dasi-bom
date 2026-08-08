@@ -51,6 +51,30 @@ python manage.py runserver
 
 `DailyCheckIn`에서 필수는 `sleep_quality`·`mood` 두 개뿐입니다. PRD의 "입력 부담 최소화" 때문에 나머지는 건너뛸 수 있게 뒀습니다.
 
+### API
+
+| 메서드 | 경로 | 설명 |
+| --- | --- | --- |
+| `GET` | `/api/symptoms/types/` | 원터치 버튼 목록 (비활성 증상 제외) |
+| `POST` | `/api/symptoms/logs/` | 증상 기록. **`symptom_type` 하나만 보내면 됩니다** — 시각은 지금, 강도는 '보통'이 기본값 |
+| `GET` | `/api/symptoms/logs/` | 기간 조회 |
+| `DELETE` | `/api/symptoms/logs/<id>/` | 오입력 취소 |
+| `GET` | `/api/symptoms/checkins/today/` | 오늘 체크인 상태 |
+| `PUT` | `/api/symptoms/checkins/today/` | 오늘 체크인 저장 (없으면 생성 `201`, 있으면 수정 `200`) |
+| `GET` | `/api/symptoms/checkins/` | 기간 조회 |
+
+조회용 쿼리 파라미터는 `?date=2026-08-08` (하루) 또는 `?from=...&to=...` (기간)이고, 아무것도 안 주면 **최근 14일**입니다.
+
+두 가지만 기억하시면 됩니다.
+
+- **`source`는 서버가 정합니다.** 이 엔드포인트로 들어온 기록은 전부 `manual`이 됩니다. 챗봇이 대화로 받아낸 소급 기록은 별도 엔드포인트(`backfill`, 예정)로 받아서 구분합니다.
+- **체크인을 아직 안 한 상태는 오류가 아닙니다.** `GET .../today/`는 404 대신 `{"completed": false, "check_in": null}`을 200으로 돌려줍니다. 앱이 예외 처리 없이 화면을 그릴 수 있게 하려는 것입니다.
+
+```jsonc
+// GET /api/symptoms/checkins/today/
+{ "date": "2026-08-08", "completed": true, "check_in": { "sleep_quality": 3, "mood": 4, ... } }
+```
+
 ### 시연용 목업 데이터
 
 ```bash
