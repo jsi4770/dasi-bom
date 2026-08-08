@@ -1,0 +1,10 @@
+{
+  "_note": "Manually eyeballed ground-truth severity labels for the test photos in media/face_analysis/2026/08/07/, used by `manage.py benchmark_face_analysis` to score pipeline agreement. Labeled by 조수인 on 2026-08-09.",
+  "142068_139721_2750.jpg": "mild",
+  "8d199ef4-8ab4-4d4e-815b-02d8ca30007a.png": "mild",
+  "94993a28-8e1d-4623-8175-d4d28f5e5eb7.png": "moderate",
+  "bd3dff39-2475-407b-a656-3aac34813ee9.png": "severe",
+  "images_1.jpeg": "mild",
+  "images_2.jpeg": "moderate",
+  "스크린샷_2026-08-07_02.00.00.png": "severe"
+}

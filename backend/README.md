@@ -38,6 +38,57 @@ python manage.py runserver
 각 기능 앱은 `/api/<app>/` 아래에 마운트되어 있습니다 (`config/urls.py`).
 엔드포인트는 각 앱의 `views.py` / `urls.py`에 추가하세요.
 
+## symptoms (증상 기록 · 체크인)
+
+모델 4개로 나뉩니다.
+
+| 모델 | 역할 |
+| --- | --- |
+| `SymptomType` | 증상 마스터 12종. **앱의 원터치 버튼 목록을 이 테이블에서 내려주므로**, 항목이 바뀌어도 앱 재배포가 필요 없습니다. 초기 데이터는 마이그레이션 `0002`에 있고, 이후 변경은 admin에서 |
+| `SymptomLog` | 낮에 원터치로 남기는 증상 1건. `source`로 직접 기록/챗봇 대화/소급 기록을 구분 |
+| `DailyCheckIn` | 저녁 종합 체크인. 하루 1건(`user`+`date` 유니크). **이 레코드가 있으면 그날은 기록 완료**로 셉니다 (성공 지표: 2주 연속 주 5일) |
+| `WeeklyReport` | 주간 패턴 리포트 캐시. 숫자는 `stats`(규칙 기반 집계), 문장은 `summary_text` |
+
+`DailyCheckIn`에서 필수는 `sleep_quality`·`mood` 두 개뿐입니다. PRD의 "입력 부담 최소화" 때문에 나머지는 건너뛸 수 있게 뒀습니다.
+
+### API
+
+| 메서드 | 경로 | 설명 |
+| --- | --- | --- |
+| `GET` | `/api/symptoms/types/` | 원터치 버튼 목록 (비활성 증상 제외) |
+| `POST` | `/api/symptoms/logs/` | 증상 기록. **`symptom_type` 하나만 보내면 됩니다** — 시각은 지금, 강도는 '보통'이 기본값 |
+| `GET` | `/api/symptoms/logs/` | 기간 조회 |
+| `DELETE` | `/api/symptoms/logs/<id>/` | 오입력 취소 |
+| `GET` | `/api/symptoms/checkins/today/` | 오늘 체크인 상태 |
+| `PUT` | `/api/symptoms/checkins/today/` | 오늘 체크인 저장 (없으면 생성 `201`, 있으면 수정 `200`) |
+| `GET` | `/api/symptoms/checkins/` | 기간 조회 |
+
+조회용 쿼리 파라미터는 `?date=2026-08-08` (하루) 또는 `?from=...&to=...` (기간)이고, 아무것도 안 주면 **최근 14일**입니다.
+
+두 가지만 기억하시면 됩니다.
+
+- **`source`는 서버가 정합니다.** 이 엔드포인트로 들어온 기록은 전부 `manual`이 됩니다. 챗봇이 대화로 받아낸 소급 기록은 별도 엔드포인트(`backfill`, 예정)로 받아서 구분합니다.
+- **체크인을 아직 안 한 상태는 오류가 아닙니다.** `GET .../today/`는 404 대신 `{"completed": false, "check_in": null}`을 200으로 돌려줍니다. 앱이 예외 처리 없이 화면을 그릴 수 있게 하려는 것입니다.
+
+```jsonc
+// GET /api/symptoms/checkins/today/
+{ "date": "2026-08-08", "completed": true, "check_in": { "sleep_quality": 3, "mood": 4, ... } }
+```
+
+### 시연용 목업 데이터
+
+```bash
+python manage.py seed_symptoms --reset     # demo / demo1234 계정에 14일치 생성
+```
+
+난수 시드가 고정돼 있어 몇 번을 돌려도 같은 데이터가 나옵니다(기준일만 오늘로 이동). 주간 리포트가 다시 찾아내야 할 패턴을 의도적으로 심어 뒀습니다.
+
+- 홍조가 저녁(18~22시)에 몰림 — 전체의 약 58%
+- 못 잔 다음날 홍조가 늘어남 — 평균 3.2회 vs 2.0회
+- 기록이 빠진 날 2일 — 챗봇이 먼저 물어볼 재료
+
+**주의**: `--reset`은 대상 사용자의 증상 기록·체크인·주간 리포트를 **전부 지우고** 다시 만듭니다. 시연 계정에만 쓰세요.
+
 ## face_analysis (얼굴 홍조 분석)
 
 MediaPipe FaceLandmarker로 얼굴 부위(이마/양볼/코)를 찾고, 각 부위의 CIE Lab a\* 채널(피부 홍조를 정량화할 때 쓰는 색공간 지표)을 점수화하는 규칙 기반 MVP입니다. 딥러닝 학습 없이 바로 동작하며, 로직은 `apps/face_analysis/analysis.py`에 있습니다.

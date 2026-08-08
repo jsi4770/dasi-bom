@@ -10,11 +10,13 @@ same channel used in dermatology colorimetry for erythema, e.g.
 Mexameter/Chromameter-style measurements).
 
 No training is involved yet, so this is intentionally simple and
-explainable. The calibration constants below are placeholders based on
-published a*-channel ranges for skin erythema, not our own data -- whoever
-owns this feature should recalibrate SEVERITY_THRESHOLDS / A_CHANNEL_LOW /
-A_CHANNEL_HIGH against real labeled photos, or swap analyze_face_redness()
-for a fine-tuned classifier later without touching the calling views.
+explainable. A_CHANNEL_LOW / A_CHANNEL_HIGH were least-squares fit against
+7 hand-labeled real photos (see apps/face_analysis/benchmark_labels.json,
+`manage.py benchmark_face_analysis`) -- a real but tiny sample, so treat
+these as a rough first calibration, not a settled ground truth. Whoever
+owns this feature should keep growing the labeled set and refitting, or
+swap analyze_face_redness() for a fine-tuned classifier later without
+touching the calling views.
 """
 
 import cv2
@@ -43,12 +45,25 @@ MOUTH_CORNER_B = 291  # same side as EYE_B_OUTER
 # hair for the far cheek instead of skin.
 MIN_SKIN_LIGHTNESS = 20.0
 
-# After gray-world correction against the temple reference, 0 means "as red
-# as the subject's own temples in this photo". Placeholder calibration for
-# how far above that a region needs to be to count as mild/severe redness --
-# recalibrate once real labeled photos are available.
-A_CHANNEL_LOW = 0.0
-A_CHANNEL_HIGH = 15.0
+# Below this Lab chroma (hypot(a*, b*)), a white-balance *reference* patch
+# is rejected as "probably not skin" even if it passes MIN_SKIN_LIGHTNESS.
+# Reference patches (temple/chin, see analyze_face_redness) sit outside the
+# scored ROIs, so unlike forehead/cheeks they can silently land on hair or
+# background instead of skin -- both of which are dark-or-bright but fairly
+# neutral (low chroma), while real skin keeps meaningful a*/b* from
+# blood/melanin even under harsh lighting. Measured on a real long-hair
+# selfie where a temple reference landed on hair: hair chroma 4.2, a
+# background window chroma 5.0, actual chin skin chroma 12.7.
+MIN_REFERENCE_CHROMA = 6.0
+
+# After gray-world correction against the temple/chin reference, this maps
+# raw Lab a* to a 0-100 score. Least-squares fit against 7 hand-labeled
+# photos' raw a* (mild: 0.33/0.67/2.25, moderate: 10.0/12.0, severe:
+# 12.0/21.25 -- see benchmark_labels.json) so that the SEVERITY_BINS cuts
+# below land near each label boundary. n=7 is tiny; refit as more labeled
+# photos come in via `manage.py benchmark_face_analysis`.
+A_CHANNEL_LOW = -5.0
+A_CHANNEL_HIGH = 21.5
 
 SEVERITY_BINS = (
     (20, 'normal'),
@@ -155,7 +170,8 @@ def _lab_channels(rgb_patch):
     lab = cv2.cvtColor(rgb_patch, cv2.COLOR_RGB2LAB).astype(np.float32)
     lightness = lab[:, :, 0] / 255.0 * 100.0
     a_signed = lab[:, :, 1] - 128.0
-    return lightness, a_signed
+    b_signed = lab[:, :, 2] - 128.0
+    return lightness, a_signed, b_signed
 
 
 def _redness_index(rgb_patch):
@@ -164,13 +180,29 @@ def _redness_index(rgb_patch):
     Median (not mean) so a handful of blown-out specular-highlight pixels
     (oily nose/forehead shine) don't drag the whole ROI's reading around.
     """
-    _, a_signed = _lab_channels(rgb_patch)
+    _, a_signed, _ = _lab_channels(rgb_patch)
     return float(np.median(a_signed))
 
 
 def _looks_like_skin(rgb_patch):
-    lightness, _ = _lab_channels(rgb_patch)
+    lightness, _, _ = _lab_channels(rgb_patch)
     return float(np.median(lightness)) >= MIN_SKIN_LIGHTNESS
+
+
+def _looks_like_skin_reference(rgb_patch):
+    """Stricter skin check for white-balance reference patches.
+
+    Reference patches sit outside the scored ROIs (see analyze_face_redness),
+    so a bare lightness floor isn't enough to keep them off hair/background --
+    both can be within the "not too dark" range yet be near-neutral gray,
+    unlike real skin which keeps measurable a*/b* chroma. See
+    MIN_REFERENCE_CHROMA for the measurements behind the threshold.
+    """
+    if not _looks_like_skin(rgb_patch):
+        return False
+    _, a_signed, b_signed = _lab_channels(rgb_patch)
+    chroma = float(np.hypot(np.median(a_signed), np.median(b_signed)))
+    return chroma >= MIN_REFERENCE_CHROMA
 
 
 def _score_from_index(a_signed_mean):
@@ -218,18 +250,32 @@ def analyze_face_redness(image_file):
     # Reference candidates for gray-world correction: same photo/lighting,
     # but outside the classic flush pattern (forehead/nose/cheeks) and
     # disjoint from the ROIs scored below. Temples are tried first but are
-    # frequently cropped out of tight selfie-style photos, so the chin is
-    # kept as a fallback that's almost always still in frame.
+    # frequently cropped out of tight selfie-style photos (or, with long
+    # hairstyles, land on hair instead), so the chin is kept as a fallback
+    # that's almost always still in frame *and* still skin. Each candidate
+    # must pass _looks_like_skin_reference -- without this, a temple that
+    # lands on hair or background silently pollutes the reference average
+    # and skews every scored region's white balance together (see
+    # MIN_REFERENCE_CHROMA).
     reference_centers = (
         (eye_a[0] - inter_eye_dist * 0.75, eye_mid_y),
         (eye_b[0] + inter_eye_dist * 0.75, eye_mid_y),
         (nose[0], chin[1] - roi_half * 0.5),
     )
-    reference_patches = [
-        patch.reshape(-1, 3)
+    reference_candidates = [
+        patch
         for patch in (_crop_square(rgb_array, c, roi_half) for c in reference_centers)
         if patch is not None and patch.size > 0
     ]
+    # Prefer candidates that clearly look like skin (chroma check). But on
+    # tight crops all three landmarks can end up partially clipped/shadowed
+    # enough that none clear that bar -- falling back to "not obviously
+    # hair/deep-shadow" (lightness only) beats skipping correction entirely,
+    # which was previously shown to reintroduce the lighting-color-cast bias
+    # PR #6 fixed.
+    reference_patches = [p.reshape(-1, 3) for p in reference_candidates if _looks_like_skin_reference(p)]
+    if not reference_patches:
+        reference_patches = [p.reshape(-1, 3) for p in reference_candidates if _looks_like_skin(p)]
     lighting_corrected = bool(reference_patches)
     balanced = (
         _gray_world_white_balance(rgb_array, np.concatenate(reference_patches))
@@ -247,6 +293,7 @@ def analyze_face_redness(image_file):
     }
 
     region_scores = {}
+    region_raw_index = {}
     excluded_regions = []
     for name, (center, anchors) in fixed_regions.items():
         if not all(_fully_in_frame(a, width, height, roi_half) for a in anchors):
@@ -259,7 +306,9 @@ def analyze_face_redness(image_file):
         if not _looks_like_skin(patch):
             excluded_regions.append(name)
             continue
-        region_scores[name] = round(_score_from_index(_redness_index(patch)), 1)
+        raw = _redness_index(patch)
+        region_raw_index[name] = round(raw, 2)
+        region_scores[name] = round(_score_from_index(raw), 1)
 
     # Cheeks: eye+mouth-corner midpoint when the eye is usable, else a
     # nose->mouth-corner fallback (see _cheek_center) so a tight crop that
@@ -277,7 +326,9 @@ def analyze_face_redness(image_file):
         if not _looks_like_skin(patch):
             excluded_regions.append(name)
             continue
-        region_scores[name] = round(_score_from_index(_redness_index(patch)), 1)
+        raw = _redness_index(patch)
+        region_raw_index[name] = round(raw, 2)
+        region_scores[name] = round(_score_from_index(raw), 1)
 
     if not region_scores:
         raise NoFaceDetectedError('피부 영역을 추출하지 못했습니다. 다시 촬영해 주세요.')
@@ -288,6 +339,7 @@ def analyze_face_redness(image_file):
         'redness_score': overall_score,
         'severity': _severity_from_score(overall_score),
         'region_scores': region_scores,
+        'region_raw_index': region_raw_index,
         'lighting_corrected': lighting_corrected,
         'excluded_regions': excluded_regions,
     }
