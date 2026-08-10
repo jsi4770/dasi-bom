@@ -10,6 +10,7 @@ djangorestframework==3.17.2
 et-xmlfile==2.0.0
 flatbuffers==25.12.19
 fonttools==4.63.0
+google-genai>=1.0.0
 kiwisolver==1.5.0
 matplotlib==3.11.1
 mediapipe==1.0.0

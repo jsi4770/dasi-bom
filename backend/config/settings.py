@@ -147,6 +147,14 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 FACE_LANDMARKER_MODEL_PATH = BASE_DIR / 'ml_models' / 'face_landmarker.task'
 
 
+# Chatbot (apps.chatbot) — Gemini API
+
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+GEMINI_CHAT_MODEL = os.environ.get('GEMINI_CHAT_MODEL', 'gemini-flash-latest')
+GEMINI_TTS_MODEL = os.environ.get('GEMINI_TTS_MODEL', 'gemini-2.5-flash-preview-tts')
+GEMINI_TTS_VOICE = os.environ.get('GEMINI_TTS_VOICE', 'Kore')
+
+
 # Django REST Framework
 # https://www.django-rest-framework.org/api-guide/settings/
 
