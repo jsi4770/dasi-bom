@@ -1,5 +1,6 @@
 import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
+import { router } from 'expo-router';
+import { Platform, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AnimatedIcon } from '@/components/animated-icon';
@@ -55,6 +56,16 @@ export default function HomeScreen() {
           />
         </ThemedView>
 
+        {Platform.OS !== 'web' && (
+          <TouchableOpacity
+            style={styles.checkInButton}
+            onPress={() => router.push('/face-capture')}>
+            <ThemedText type="default" style={styles.checkInButtonText}>
+              체크인 사진 촬영
+            </ThemedText>
+          </TouchableOpacity>
+        )}
+
         {Platform.OS === 'web' && <WebBadge />}
       </SafeAreaView>
     </ThemedView>
@@ -94,5 +105,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.four,
     borderRadius: Spacing.four,
+  },
+  checkInButton: {
+    alignSelf: 'stretch',
+    backgroundColor: '#208AEF',
+    borderRadius: Spacing.three,
+    paddingVertical: Spacing.three,
+    alignItems: 'center',
+  },
+  checkInButtonText: {
+    color: '#ffffff',
+    fontWeight: '600',
   },
 });
