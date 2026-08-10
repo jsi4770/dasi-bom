@@ -7,6 +7,7 @@ cycler==0.12.1
 Django==5.2.17
 django-cors-headers==4.9.0
 djangorestframework==3.17.2
+et-xmlfile==2.0.0
 flatbuffers==25.12.19
 fonttools==4.63.0
 kiwisolver==1.5.0
@@ -14,6 +15,7 @@ matplotlib==3.11.1
 mediapipe==1.0.0
 numpy==2.5.1
 opencv-contrib-python==5.0.0.93
+openpyxl==3.1.5
 packaging==26.3
 pillow==12.3.0
 psycopg2-binary==2.9.12
