@@ -5,6 +5,7 @@
   "dependencies": {
     "@expo/ui": "~57.0.9",
     "expo": "~57.0.11",
+    "expo-camera": "~57.0.3",
     "expo-constants": "~57.0.9",
     "expo-device": "~57.0.1",
     "expo-font": "~57.0.1",
@@ -29,6 +30,8 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~57.0.1",
     "typescript": "~6.0.3"
   },
   "scripts": {
