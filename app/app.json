@@ -38,6 +38,12 @@
         {
           "cameraPermission": "완경 체크인을 위해 얼굴 사진을 촬영하려면 카메라 접근 권한이 필요합니다."
         }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "챗봇에게 음성으로 말하려면 마이크 접근 권한이 필요합니다."
+        }
       ]
     ],
     "experiments": {
