@@ -57,6 +57,14 @@ export default function HomeScreen() {
         </ThemedView>
 
         {Platform.OS !== 'web' && (
+          <TouchableOpacity style={styles.checkInButton} onPress={() => router.push('/chat')}>
+            <ThemedText type="default" style={styles.checkInButtonText}>
+              챗봇과 대화하기
+            </ThemedText>
+          </TouchableOpacity>
+        )}
+
+        {Platform.OS !== 'web' && (
           <TouchableOpacity
             style={styles.checkInButton}
             onPress={() => router.push('/face-capture')}>
