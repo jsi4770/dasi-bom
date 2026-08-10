@@ -1,103 +1,115 @@
-import { router, Slot, usePathname } from 'expo-router';
-import { Pressable, View, StyleSheet } from 'react-native';
+import {
+  Tabs,
+  TabList,
+  TabTrigger,
+  TabSlot,
+  TabTriggerSlotProps,
+  TabListProps,
+} from 'expo-router/ui';
+import { SymbolView } from 'expo-symbols';
+import { Pressable, useColorScheme, View, StyleSheet } from 'react-native';
 
+import { ExternalLink } from './external-link';
 import { ThemedText } from './themed-text';
+import { ThemedView } from './themed-view';
 
-import { MaxContentWidth, Spacing, Warm } from '@/constants/theme';
+import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
 
-const TABS = [
-  { key: 'home', href: '/', label: '홈' },
-  { key: 'report', href: '/report', label: '리포트' },
-  { key: 'care', href: '/care', label: '돌봄' },
-  { key: 'chat', href: '/chat', label: '대화' },
-  { key: 'settings', href: '/settings', label: '설정' },
-] as const;
-
-/**
- * expo-router/ui의 Tabs/TabList/TabSlot 조합은 선언한 탭 외 경로(onboarding/*,
- * symptom-log, face-capture 등)로는 못 감 — 안 걸린 경로는 그냥 첫 탭으로 남아있음.
- * Slot(=현재 매칭된 라우트를 그대로 렌더)로 바꾸고, 탭 바는 5개 탭 루트에서만
- * 직접 그려서 네이티브(NativeTabs)와 동일하게 임의 화면 push가 가능하게 함.
- */
 export default function AppTabs() {
-  const pathname = usePathname();
-  const showTabBar = TABS.some((tab) => tab.href === pathname);
+  return (
+    <Tabs>
+      <TabSlot style={{ height: '100%' }} />
+      <TabList asChild>
+        <CustomTabList>
+          <TabTrigger name="home" href="/" asChild>
+            <TabButton>Home</TabButton>
+          </TabTrigger>
+          <TabTrigger name="explore" href="/explore" asChild>
+            <TabButton>Explore</TabButton>
+          </TabTrigger>
+        </CustomTabList>
+      </TabList>
+    </Tabs>
+  );
+}
+
+export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps) {
+  return (
+    <Pressable {...props} style={({ pressed }) => pressed && styles.pressed}>
+      <ThemedView
+        type={isFocused ? 'backgroundSelected' : 'backgroundElement'}
+        style={styles.tabButtonView}>
+        <ThemedText type="small" themeColor={isFocused ? 'text' : 'textSecondary'}>
+          {children}
+        </ThemedText>
+      </ThemedView>
+    </Pressable>
+  );
+}
+
+export function CustomTabList(props: TabListProps) {
+  const scheme = useColorScheme();
+  const colors = Colors[scheme === 'unspecified' ? 'light' : scheme];
 
   return (
-    <View style={styles.root}>
-      <Slot />
-      {showTabBar && (
-        <View style={styles.tabListContainer}>
-          <View style={styles.innerContainer}>
-            {TABS.map((tab) => {
-              const isFocused = tab.href === pathname;
-              return (
-                <Pressable
-                  key={tab.key}
-                  onPress={() => router.push(tab.href)}
-                  style={({ pressed }) => pressed && styles.pressed}>
-                  <View style={[styles.tabButtonView, isFocused && styles.tabButtonViewFocused]}>
-                    <ThemedText type="small" style={isFocused ? styles.labelFocused : styles.label}>
-                      {tab.label}
-                    </ThemedText>
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-      )}
+    <View {...props} style={styles.tabListContainer}>
+      <ThemedView type="backgroundElement" style={styles.innerContainer}>
+        <ThemedText type="smallBold" style={styles.brandText}>
+          Expo Starter
+        </ThemedText>
+
+        {props.children}
+
+        <ExternalLink href="https://docs.expo.dev" asChild>
+          <Pressable style={styles.externalPressable}>
+            <ThemedText type="link">Docs</ThemedText>
+            <SymbolView
+              tintColor={colors.text}
+              name={{ ios: 'arrow.up.right.square', web: 'link' }}
+              size={12}
+            />
+          </Pressable>
+        </ExternalLink>
+      </ThemedView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
   tabListContainer: {
     position: 'absolute',
-    bottom: 0,
     width: '100%',
     padding: Spacing.three,
     justifyContent: 'center',
     alignItems: 'center',
     flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: Warm.border,
   },
   innerContainer: {
     paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.three,
+    paddingHorizontal: Spacing.five,
     borderRadius: Spacing.five,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-around',
     flexGrow: 1,
     gap: Spacing.two,
     maxWidth: MaxContentWidth,
-    backgroundColor: Warm.card,
+  },
+  brandText: {
+    marginRight: 'auto',
   },
   pressed: {
     opacity: 0.7,
   },
   tabButtonView: {
-    minHeight: 44,
-    justifyContent: 'center',
     paddingVertical: Spacing.one,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.three,
   },
-  tabButtonViewFocused: {
-    backgroundColor: Warm.primarySoft,
-  },
-  label: {
-    fontSize: 15,
-    color: Warm.textSecondary,
-  },
-  labelFocused: {
-    fontSize: 15,
-    color: Warm.primaryStrong,
-    fontWeight: '700',
+  externalPressable: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: Spacing.one,
+    marginLeft: Spacing.three,
   },
 });
