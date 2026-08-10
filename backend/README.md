@@ -17,17 +17,55 @@ backend/
 
 ## 로컬 세팅
 
+### 1. 의존성 설치
+
 ```bash
 cd backend
 python3 -m venv venv
-source venv/bin/activate
+source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
+```
 
-cp .env.example .env   # 값 채우기 (DB, GEMINI_API_KEY 등)
+### 2. 환경 변수
 
-# PostgreSQL 로컬 실행 후
+```bash
+cp .env.example .env   # 값 채우기 (GEMINI_API_KEY 등). DB 값은 아래 3번 컨테이너와 맞춰져 있어 기본값 그대로 써도 됨
+```
+
+### 3. PostgreSQL 준비 (Docker)
+
+로컬에 Postgres를 따로 설치하지 않았다면, `.env.example`의 DB 값과 정확히 맞춘 컨테이너 하나면 충분합니다.
+
+```bash
+docker run --name dasibom-postgres \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=dasibom \
+  -p 5432:5432 \
+  -d postgres:16
+```
+
+한 번 만들어두면 다음부터는 `docker start dasibom-postgres`로 재기동하면 됩니다.
+
+### 4. 마이그레이션 적용
+
+```bash
 python manage.py migrate
-python manage.py createsuperuser
+python manage.py createsuperuser   # 선택
+```
+
+### 5. 시연용 데이터 생성
+
+```bash
+python manage.py seed_symptoms --reset     # 증상 기록·체크인 (14일치)
+python manage.py seed_reminders --reset    # 리마인더·완료기록 (7일치)
+```
+
+둘 다 같은 데모 계정(`demo` / `demo1234`)을 씁니다. 자세한 내용은 아래 각 앱 섹션 참고.
+
+### 6. 서버 실행
+
+```bash
 python manage.py runserver
 ```
 
