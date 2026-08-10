@@ -32,7 +32,7 @@ urlpatterns = [
     path('api/symptoms/', include('apps.symptoms.urls')),
     path('api/chatbot/', include('apps.chatbot.urls')),
     path('api/face-analysis/', include('apps.face_analysis.urls')),
-    path('api/notifications/', include('apps.notifications.urls')),
+    path('api/reminders/', include('apps.notifications.urls')),
 ]
 
 if settings.DEBUG:
