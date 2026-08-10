@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Spacing, Warm } from '@/constants/theme';
 
 // 얼굴 타원 가이드 크기. 화면 폭 기준으로 잡아서 기기마다 비슷한 비율로 보이게 함.
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -234,7 +234,7 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     flex: 1,
-    backgroundColor: '#208AEF',
+    backgroundColor: Warm.primaryDeep,
     borderRadius: Spacing.three,
     paddingVertical: Spacing.three,
     alignItems: 'center',

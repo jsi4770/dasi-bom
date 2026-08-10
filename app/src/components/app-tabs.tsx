@@ -1,31 +1,33 @@
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
-import { useColorScheme } from 'react-native';
 
-import { Colors } from '@/constants/theme';
+import { Warm } from '@/constants/theme';
 
 export default function AppTabs() {
-  const scheme = useColorScheme();
-  const colors = Colors[scheme === 'unspecified' ? 'light' : scheme];
-
   return (
-    <NativeTabs
-      backgroundColor={colors.background}
-      indicatorColor={colors.backgroundElement}
-      labelStyle={{ selected: { color: colors.text } }}>
+    <NativeTabs backgroundColor={Warm.card} indicatorColor={Warm.primarySoft} iconColor={Warm.textSecondary}>
       <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          src={require('@/assets/images/tabIcons/home.png')}
-          renderingMode="template"
-        />
+        <NativeTabs.Trigger.Label selectedStyle={{ color: Warm.primaryStrong }}>홈</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="house.fill" md="home" selectedColor={Warm.primaryStrong} />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="explore">
-        <NativeTabs.Trigger.Label>Explore</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          src={require('@/assets/images/tabIcons/explore.png')}
-          renderingMode="template"
-        />
+      <NativeTabs.Trigger name="report">
+        <NativeTabs.Trigger.Label selectedStyle={{ color: Warm.primaryStrong }}>리포트</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="chart.bar.fill" md="bar_chart" selectedColor={Warm.primaryStrong} />
+      </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger name="care">
+        <NativeTabs.Trigger.Label selectedStyle={{ color: Warm.primaryStrong }}>돌봄</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="heart.fill" md="favorite" selectedColor={Warm.primaryStrong} />
+      </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger name="chat">
+        <NativeTabs.Trigger.Label selectedStyle={{ color: Warm.primaryStrong }}>대화</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="bubble.left.fill" md="chat" selectedColor={Warm.primaryStrong} />
+      </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger name="settings">
+        <NativeTabs.Trigger.Label selectedStyle={{ color: Warm.primaryStrong }}>설정</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="gearshape.fill" md="settings" selectedColor={Warm.primaryStrong} />
       </NativeTabs.Trigger>
     </NativeTabs>
   );
