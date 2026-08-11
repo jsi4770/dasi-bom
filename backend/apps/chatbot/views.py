@@ -1,7 +1,6 @@
 import base64
 import binascii
 
-from django.contrib.auth import get_user_model
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
@@ -10,12 +9,10 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.users.demo import get_demo_user
 from . import gemini
 from .models import ChatMessage, ChatSession
 from .serializers import ChatMessageSerializer, ChatSessionSerializer
-
-DEMO_USERNAME = 'demo'
-DEMO_PASSWORD = 'demo1234'
 
 GEMINI_ERROR_RESPONSES = {
     gemini.GeminiRateLimitError: (
@@ -30,18 +27,7 @@ GEMINI_ERROR_RESPONSES = {
 
 
 def _current_user():
-    """TODO(PRD 향후 개선 과제): 실제 인증(Token/JWT) 붙으면 request.user 로 교체.
-
-    지금은 데모 계정으로 고정 — symptoms/notifications 시드 커맨드와 같은 계정을 재사용해서
-    한 사용자로 데이터가 모이게 한다.
-    """
-    user, created = get_user_model().objects.get_or_create(
-        username=DEMO_USERNAME, defaults={'first_name': '데모'}
-    )
-    if created:
-        user.set_password(DEMO_PASSWORD)
-        user.save(update_fields=['password'])
-    return user
+    return get_demo_user()
 
 
 def _gemini_error_response(exc):
