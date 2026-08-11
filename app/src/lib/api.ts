@@ -1,4 +1,5 @@
 import { File, Paths } from 'expo-file-system';
+import { Platform } from 'react-native';
 
 export type ChatSession = {
   id: number;
@@ -65,9 +66,14 @@ export function sendAudioMessage(sessionId: number, audioBase64: string, mimeTyp
   });
 }
 
-/** 메시지 텍스트를 TTS로 합성해 로컬 파일로 받아온다 (재생은 expo-audio 플레이어가 파일 uri로 하는 게 안정적). */
+/** 메시지 텍스트를 TTS로 합성해 재생 가능한 uri를 반환한다.
+ * 네이티브는 expo-audio 플레이어가 파일 uri로 재생하는 게 안정적이라 로컬에 다운로드하고,
+ * 웹은 expo-file-system이 미지원이라 <audio> 엘리먼트가 바로 스트리밍하도록 URL을 그대로 넘긴다. */
 export async function fetchMessageSpeechFile(messageId: number): Promise<string> {
   const url = `${getApiBaseUrl()}/api/chatbot/messages/${messageId}/speech/`;
+  if (Platform.OS === 'web') {
+    return url;
+  }
   const destination = new File(Paths.cache, `chatbot-speech-${messageId}-${Date.now()}.wav`);
   try {
     const file = await File.downloadFileAsync(url, destination);
