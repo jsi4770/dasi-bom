@@ -121,13 +121,18 @@ def _slot_totals(logs):
 def _check_in_averages(check_ins):
     def average(field):
         values = [getattr(c, field) for c in check_ins if getattr(c, field) is not None]
-        return round(sum(values) / len(values), 1) if values else None
+        if not values:
+            return None
+        # sleep_hours 는 Decimal 이라 그대로 두면 JSON 으로 못 나간다.
+        return round(float(sum(values)) / len(values), 1)
 
     return {
         'sleep_quality': average('sleep_quality'),
         'mood': average('mood'),
         'fatigue': average('fatigue'),
         'stress': average('stress'),
+        # 1~5 점수가 아니라 실제 수면 시간(예: 6.5). 선택 입력이라 아무도 안 넣으면 None.
+        'sleep_hours': average('sleep_hours'),
     }
 
 

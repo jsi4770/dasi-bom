@@ -258,6 +258,25 @@ class WeeklyReportTests(SymptomApiTestCase):
         self.assertEqual(link['symptoms_after_poor_sleep'], 3.0)
         self.assertEqual(link['symptoms_after_good_sleep'], 1.0)
 
+    def test_averages_include_actual_sleep_hours(self):
+        """프론트 리포트 화면이 '평균 수면 시간'을 쓰기 때문에 1~5 점수와 별개로 나가야 한다."""
+        DailyCheckIn.objects.create(
+            user=self.user, date=self.monday, sleep_quality=2, mood=3, sleep_hours=5,
+        )
+        DailyCheckIn.objects.create(
+            user=self.user, date=self.monday + timedelta(days=1), sleep_quality=4, mood=4, sleep_hours=7,
+        )
+
+        averages = self.client.get(self.url).data['stats']['check_in_averages']
+
+        self.assertEqual(averages['sleep_hours'], 6.0)
+        self.assertEqual(averages['sleep_quality'], 3.0)
+
+    def test_sleep_hours_is_none_when_nobody_filled_it_in(self):
+        self._check_in(self.monday)
+
+        self.assertIsNone(self.client.get(self.url).data['stats']['check_in_averages']['sleep_hours'])
+
     def test_skips_sleep_link_when_sample_is_too_small(self):
         self._check_in(self.monday, sleep_quality=2)
         self._check_in(self.monday + timedelta(days=1), sleep_quality=5)
