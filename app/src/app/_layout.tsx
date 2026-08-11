@@ -1,14 +1,13 @@
-import { DarkTheme, DefaultTheme, Redirect, ThemeProvider, usePathname } from 'expo-router';
+import { DarkTheme, DefaultTheme, Redirect, Stack, ThemeProvider, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useState } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
 
 SplashScreen.preventAutoHideAsync();
 
-export default function TabLayout() {
+export default function RootLayout() {
   const colorScheme = useColorScheme();
   const pathname = usePathname();
 
@@ -28,7 +27,16 @@ export default function TabLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
       {needsBootRedirect && <Redirect href="/onboarding/welcome" />}
-      <AppTabs />
+      <Stack>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="face-capture" options={{ headerShown: false }} />
+        <Stack.Screen name="face-result" options={{ headerShown: false }} />
+        <Stack.Screen name="symptom-log" options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding/welcome" options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding/survey" options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding/survey-result" options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding/consent" options={{ headerShown: false }} />
+      </Stack>
     </ThemeProvider>
   );
 }

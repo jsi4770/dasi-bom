@@ -2,12 +2,13 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Dimensions, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Dimensions, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing, Warm } from '@/constants/theme';
+import { ApiError, uploadFaceAnalysis } from '@/lib/api';
 
 // 얼굴 타원 가이드 크기. 화면 폭 기준으로 잡아서 기기마다 비슷한 비율로 보이게 함.
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -18,6 +19,8 @@ export default function FaceCaptureScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [errorText, setErrorText] = useState<string | null>(null);
   const cameraRef = useRef<CameraView>(null);
 
   if (!permission) {
@@ -56,11 +59,28 @@ export default function FaceCaptureScreen() {
 
   function handleRetake() {
     setPhotoUri(null);
+    setErrorText(null);
   }
 
-  function handleConfirm() {
-    // TODO: 체크인 제출 흐름과 연결되면 여기서 촬영 결과를 다음 화면으로 넘긴다.
-    router.back();
+  async function handleConfirm() {
+    if (!photoUri || isAnalyzing) {
+      return;
+    }
+    setIsAnalyzing(true);
+    setErrorText(null);
+    try {
+      const result = await uploadFaceAnalysis(photoUri);
+      router.replace({
+        pathname: '/face-result',
+        params: { photoUri, result: JSON.stringify(result) },
+      });
+    } catch (error) {
+      setErrorText(
+        error instanceof ApiError ? error.message : '사진을 분석하지 못했어요. 다시 시도해주세요.'
+      );
+    } finally {
+      setIsAnalyzing(false);
+    }
   }
 
   if (photoUri) {
@@ -68,16 +88,33 @@ export default function FaceCaptureScreen() {
       <View style={styles.fill}>
         <Image source={{ uri: photoUri }} style={styles.fill} contentFit="cover" />
         <SafeAreaView style={styles.previewControls}>
-          <TouchableOpacity style={styles.secondaryButton} onPress={handleRetake}>
-            <ThemedText type="default" style={styles.secondaryButtonText}>
-              다시 찍기
+          {errorText && (
+            <ThemedText type="small" style={styles.previewErrorText}>
+              {errorText}
             </ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.primaryButton} onPress={handleConfirm}>
-            <ThemedText type="default" style={styles.primaryButtonText}>
-              이 사진 사용하기
-            </ThemedText>
-          </TouchableOpacity>
+          )}
+          <View style={styles.previewButtonRow}>
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={handleRetake}
+              disabled={isAnalyzing}>
+              <ThemedText type="default" style={styles.secondaryButtonText}>
+                다시 찍기
+              </ThemedText>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={handleConfirm}
+              disabled={isAnalyzing}>
+              {isAnalyzing ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <ThemedText type="default" style={styles.primaryButtonText}>
+                  이 사진 사용하기
+                </ThemedText>
+              )}
+            </TouchableOpacity>
+          </View>
         </SafeAreaView>
       </View>
     );
@@ -227,10 +264,21 @@ const styles = StyleSheet.create({
   previewControls: {
     ...StyleSheet.absoluteFill,
     justifyContent: 'flex-end',
-    flexDirection: 'row',
-    gap: Spacing.three,
+    gap: Spacing.two,
     paddingHorizontal: Spacing.four,
     paddingBottom: Spacing.five,
+  },
+  previewButtonRow: {
+    flexDirection: 'row',
+    gap: Spacing.three,
+  },
+  previewErrorText: {
+    color: '#ffffff',
+    backgroundColor: 'rgba(214, 69, 69, 0.85)',
+    borderRadius: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    textAlign: 'center',
   },
   primaryButton: {
     flex: 1,

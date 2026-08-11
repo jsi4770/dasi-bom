@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import {
   RecordingPresets,
   requestRecordingPermissionsAsync,
+  setAudioModeAsync,
   useAudioPlayer,
   useAudioPlayerStatus,
   useAudioRecorder,
@@ -24,7 +25,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import {
-  ChatbotApiError,
+  ApiError,
   ChatMessage,
   createChatSession,
   fetchMessageSpeechFile,
@@ -32,8 +33,26 @@ import {
   sendTextMessage,
 } from '@/lib/api';
 
-// expo-audio 의 RecordingPresets.HIGH_QUALITY 는 iOS/Android 모두 m4a(AAC) 컨테이너로 녹음한다.
-const RECORDING_MIME_TYPE = 'audio/mp4';
+// expo-audio 의 RecordingPresets.HIGH_QUALITY 는 iOS/Android는 m4a(AAC), 웹은 webm으로 녹음한다.
+const RECORDING_MIME_TYPE = Platform.OS === 'web' ? 'audio/webm' : 'audio/mp4';
+
+// 웹에서 recorder.uri는 blob: URL이라 expo-file-system(웹 미지원) 대신 fetch + FileReader로 base64 변환한다.
+function blobUrlToBase64(blobUrl: string): Promise<string> {
+  return fetch(blobUrl)
+    .then((response) => response.blob())
+    .then(
+      (blob) =>
+        new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const result = reader.result as string;
+            resolve(result.slice(result.indexOf(',') + 1));
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        })
+    );
+}
 
 export default function ChatScreen() {
   const [sessionId, setSessionId] = useState<number | null>(null);
@@ -64,7 +83,7 @@ export default function ChatScreen() {
   }
 
   function describeError(error: unknown, fallback: string) {
-    return error instanceof ChatbotApiError ? error.message : fallback;
+    return error instanceof ApiError ? error.message : fallback;
   }
 
   async function handleSendText() {
@@ -98,7 +117,8 @@ export default function ChatScreen() {
       setIsSending(true);
       setErrorText(null);
       try {
-        const base64 = await new File(uri).base64();
+        const base64 =
+          Platform.OS === 'web' ? await blobUrlToBase64(uri) : await new File(uri).base64();
         appendMessages(await sendAudioMessage(sessionId, base64, RECORDING_MIME_TYPE));
       } catch (error) {
         setErrorText(describeError(error, '음성 메시지를 보내지 못했어요.'));
@@ -114,6 +134,7 @@ export default function ChatScreen() {
       return;
     }
     setErrorText(null);
+    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
     await recorder.prepareToRecordAsync();
     recorder.record();
   }
