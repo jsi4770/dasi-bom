@@ -1,5 +1,4 @@
 import { File } from 'expo-file-system';
-import { router } from 'expo-router';
 import {
   RecordingPresets,
   requestRecordingPermissionsAsync,
@@ -162,13 +161,9 @@ export default function ChatScreen() {
     <ThemedView style={styles.fill}>
       <SafeAreaView style={styles.fill} edges={['top', 'bottom']}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-            <ThemedText type="default">닫기</ThemedText>
-          </TouchableOpacity>
           <ThemedText type="subtitle" style={styles.headerTitle}>
             챗봇과 대화하기
           </ThemedText>
-          <View style={styles.headerSpacer} />
         </View>
 
         <FlatList
@@ -277,9 +272,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
   },
@@ -287,9 +279,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     lineHeight: 24,
     fontWeight: '600',
-  },
-  headerSpacer: {
-    width: 32,
   },
   messageList: {
     paddingHorizontal: Spacing.three,
