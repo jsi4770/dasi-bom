@@ -8,7 +8,7 @@ PRD의 "심사위원이 직접 연동하지 않아도 되게" 조건 때문에, 
 
 의도적으로 심어 둔 패턴 — 주간 리포트가 이걸 다시 찾아내야 한다:
   1. 홍조가 저녁(18~22시)에 몰린다        → "주로 저녁 시간대"
-  2. 못 잔 날 다음날 홍조가 늘어난다      → 수면-증상 상관
+  2. 잠을 설쳤다고 기록한 날 홍조가 늘어난다 → 수면-증상 상관
   3. 기록이 빠진 날이 이틀 있다           → 챗봇이 먼저 물어볼 재료 (missed-days)
 """
 
@@ -87,9 +87,10 @@ class Command(BaseCommand):
                 skipped.append(day)
                 continue
 
+            # DailyCheckIn.sleep_quality 는 "어젯밤" 을 묻는 값이라, 못 잔 밤의 영향은
+            # 그 체크인을 남긴 날 본인에게 나타난다. 증상도 같은 날에 얹어야
+            # 리포트가 같은 날짜끼리 비교해서 상관을 찾아낼 수 있다.
             slept_poorly = days_ago in POOR_SLEEP_DAYS
-            # 어제 못 잤으면 오늘 홍조가 는다 (days_ago 는 과거로 갈수록 커지므로 +1 이 어제)
-            after_poor_sleep = (days_ago + 1) in POOR_SLEEP_DAYS
 
             def add_log(code, hour_range, severity=SymptomLog.Severity.MODERATE):
                 start_hour, end_hour = hour_range
@@ -111,13 +112,13 @@ class Command(BaseCommand):
             # 1) 홍조 — 70% 는 저녁(18~22시)에 몰리게
             # +2 는 눈에 보이라고 넣은 값이다. 실제 사용자 데이터가 아니라 시연용이므로,
             # 리포트가 상관을 "찾아냈다"고 말할 수 있을 만큼은 벌어져 있어야 한다.
-            hot_flashes = rng.choice([0, 1, 1, 2, 2, 3]) + (2 if after_poor_sleep else 0)
+            hot_flashes = rng.choice([0, 1, 1, 2, 2, 3]) + (2 if slept_poorly else 0)
             for _ in range(hot_flashes):
                 evening = rng.random() < 0.7
                 add_log(
                     'hot_flash',
                     (18, 22) if evening else (9, 17),
-                    SymptomLog.Severity.SEVERE if after_poor_sleep and evening else SymptomLog.Severity.MODERATE,
+                    SymptomLog.Severity.SEVERE if slept_poorly and evening else SymptomLog.Severity.MODERATE,
                 )
 
             # 2) 수면 관련 — 못 잔 날에 몰아서
