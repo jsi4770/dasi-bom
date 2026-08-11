@@ -7,7 +7,6 @@ import { AnimatedIcon } from '@/components/animated-icon';
 import { HintRow } from '@/components/hint-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 
 function getDevMenuHint() {
@@ -56,25 +55,17 @@ export default function HomeScreen() {
           />
         </ThemedView>
 
-        {Platform.OS !== 'web' && (
-          <TouchableOpacity style={styles.checkInButton} onPress={() => router.push('/chat')}>
-            <ThemedText type="default" style={styles.checkInButtonText}>
-              챗봇과 대화하기
-            </ThemedText>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity style={styles.checkInButton} onPress={() => router.push('/chat')}>
+          <ThemedText type="default" style={styles.checkInButtonText}>
+            챗봇과 대화하기
+          </ThemedText>
+        </TouchableOpacity>
 
-        {Platform.OS !== 'web' && (
-          <TouchableOpacity
-            style={styles.checkInButton}
-            onPress={() => router.push('/face-capture')}>
-            <ThemedText type="default" style={styles.checkInButtonText}>
-              체크인 사진 촬영
-            </ThemedText>
-          </TouchableOpacity>
-        )}
-
-        {Platform.OS === 'web' && <WebBadge />}
+        <TouchableOpacity style={styles.checkInButton} onPress={() => router.push('/face-capture')}>
+          <ThemedText type="default" style={styles.checkInButtonText}>
+            체크인 사진 촬영
+          </ThemedText>
+        </TouchableOpacity>
       </SafeAreaView>
     </ThemedView>
   );
