@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 import os
 from pathlib import Path
 
+import dj_database_url
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -56,6 +57,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -88,15 +90,18 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
+_LOCAL_DATABASE_URL = (
+    f"postgresql://{os.environ.get('DB_USER', 'postgres')}:"
+    f"{os.environ.get('DB_PASSWORD', 'postgres')}@"
+    f"{os.environ.get('DB_HOST', 'localhost')}:"
+    f"{os.environ.get('DB_PORT', '5432')}/"
+    f"{os.environ.get('DB_NAME', 'dasibom')}"
+)
+
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'dasibom'),
-        'USER': os.environ.get('DB_USER', 'postgres'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', 'postgres'),
-        'HOST': os.environ.get('DB_HOST', 'localhost'),
-        'PORT': os.environ.get('DB_PORT', '5432'),
-    }
+    # Railway는 Postgres 플러그인을 붙이면 DATABASE_URL 하나로 접속 정보를 준다.
+    # 로컬 개발은 기존 DB_* 개별 변수로 조립한 URL을 기본값으로 사용한다.
+    'default': dj_database_url.config(default=_LOCAL_DATABASE_URL, conn_max_age=600)
 }
 
 
@@ -135,6 +140,13 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+STORAGES = {
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
 
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
