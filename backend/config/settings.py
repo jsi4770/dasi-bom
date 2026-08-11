@@ -35,6 +35,10 @@ SECRET_KEY = os.environ.get(
 DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+# Railway가 배포마다 부여하는 <random>.up.railway.app 도메인은 미리 알 수 없어서 와일드카드로 허용한다.
+if os.environ.get('RAILWAY_ENVIRONMENT'):
+    ALLOWED_HOSTS.append('.up.railway.app')
+    CSRF_TRUSTED_ORIGINS = ['https://*.up.railway.app']
 
 
 # Application definition
@@ -183,6 +187,8 @@ REST_FRAMEWORK = {
 CORS_ALLOWED_ORIGINS = os.environ.get(
     'CORS_ALLOWED_ORIGINS', 'http://localhost:8081,http://localhost:19006'
 ).split(',')
+# Vercel은 배포마다(프리뷰 포함) 서브도메인이 달라져서 정확한 오리진을 미리 알 수 없어 정규식으로 허용한다.
+CORS_ALLOWED_ORIGIN_REGEXES = [r'^https://.*\.vercel\.app$']
 
 
 # Email
