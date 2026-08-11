@@ -19,9 +19,13 @@ logger = logging.getLogger(__name__)
 PROMPT_RULES = """[지켜야 할 것]
 - 위 집계에 없는 숫자나 사실은 절대 쓰지 마세요. 수치를 새로 만들면 안 됩니다.
 - 진단하거나 병명을 말하지 마세요. 의료 조언이 아니라 생활 제안입니다.
-- 3~4문장, 짧고 따뜻한 존댓말. 완경기에 접어든 50대 여성에게 말하듯이.
-- 첫 문장은 이번 주 가장 두드러진 패턴, 마지막 문장은 오늘 바로 해볼 수 있는 작은 제안 하나.
-- "데이터에 따르면" 같은 딱딱한 표현 대신 일상적인 말로."""
+- 3문장, 짧고 따뜻하게. 완경기에 접어든 50대 여성에게 말하듯이.
+- "~습니다"가 아니라 "~어요/~네요"로 끝나는 부드러운 존댓말.
+- 날짜 숫자(2026-08-03 같은)는 쓰지 마세요. 화면에 이미 표시됩니다.
+- 첫 문장은 그 주에 가장 두드러진 패턴, 마지막 문장은 오늘 바로 해볼 수 있는 작은 제안 하나.
+- "데이터에 따르면" 같은 딱딱한 표현 대신 일상적인 말로.
+- 기간을 부를 때는 위에 적힌 표현을 그대로 쓰세요.
+- 줄바꿈 없이 이어 쓰세요."""
 
 
 def build_summary(stats):
@@ -51,16 +55,37 @@ def _ask_gemini(stats):
     text = (response.text or '').strip()
     if not text:
         raise ValueError('빈 응답')
-    return text
+    # 문단을 나눠 보내올 때가 있는데, 앱에서는 한 덩어리 문장으로 보여준다.
+    return ' '.join(text.split())
+
+
+def _period_label(week_start):
+    """'이번 주' / '지난주' / '8월 3일 주간' 중 맞는 표현."""
+    from datetime import date, timedelta
+
+    from django.utils import timezone
+
+    start = date.fromisoformat(week_start)
+    today = timezone.localdate()
+    this_monday = today - timedelta(days=today.weekday())
+
+    if start == this_monday:
+        return '이번 주'
+    if start == this_monday - timedelta(days=7):
+        return '지난주'
+    return f'{start.month}월 {start.day}일 주간'
 
 
 def _describe(stats):
     """집계 dict 를 프롬프트에 넣을 텍스트로 편다."""
     lines = [
-        '아래는 한 사용자의 이번 주 증상 기록을 집계한 결과입니다. 숫자는 이미 계산돼 있습니다.',
+        '아래는 한 사용자의 한 주간 증상 기록을 집계한 결과입니다. 숫자는 이미 계산돼 있습니다.',
         '',
         '[집계]',
-        f'기간: {stats["week_start"]} ~ {stats["week_end"]}',
+        # 지난 주 리포트도 같은 프롬프트로 만들기 때문에, 어느 주인지 알려주지 않으면
+        # 모델이 전부 "이번 주"라고 써버린다. 날짜 숫자는 넘기지 않는다 — 넘기면 문장에
+        # "2026-08-03 ~ 2026-08-09" 를 그대로 옮겨 적는다. 화면에 이미 표시되는 정보다.
+        f'이 리포트가 다루는 기간: {_period_label(stats["week_start"])}',
         f'기록한 날: {stats["days_recorded"]}일 (목표 주 {stats["goal_days"]}일)',
         f'전체 증상 기록: {stats["total_logs"]}건',
     ]
