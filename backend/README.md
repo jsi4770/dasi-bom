@@ -105,7 +105,14 @@ python manage.py runserver
 
 조회용 쿼리 파라미터는 `?date=2026-08-08` (하루) 또는 `?from=...&to=...` (기간)이고, 아무것도 안 주면 **최근 14일**입니다.
 
-인증이 아직 없어서 챗봇·얼굴분석과 같은 데모 계정(`apps/users/demo.py`의 `get_demo_user()`)을 씁니다. JWT가 붙으면 `views.py`의 `current_user()` 하나만 `request.user`로 바꾸면 됩니다.
+**모든 엔드포인트가 로그인을 요구합니다.** 시연에서는 원클릭 게스트 로그인으로 토큰을 받아 쓰면 됩니다.
+
+```bash
+curl -X POST http://localhost:8000/api/auth/demo-login/     # → {"access": "...", "refresh": "..."}
+curl -H "Authorization: Bearer <access>" http://localhost:8000/api/symptoms/reports/weekly/
+```
+
+기록이 `request.user` 기준으로 저장·조회되므로, 데모 계정으로 로그인하면 `seed_symptoms`가 만든 14일치 데이터가 그대로 보입니다.
 
 두 가지만 기억하시면 됩니다.
 

@@ -3,11 +3,8 @@ from datetime import datetime, timedelta
 from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
-from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
-from apps.users.demo import get_demo_user
 
 from .analysis import build_streak, build_weekly_stats, week_bounds
 from .models import DailyCheckIn, SymptomLog, SymptomType, WeeklyReport
@@ -20,15 +17,6 @@ from .serializers import (
 from .summary import build_summary
 
 DEFAULT_RANGE_DAYS = 14
-
-
-def current_user(request):
-    """TODO: 실제 인증(JWT)이 붙으면 request.user 로 교체.
-
-    지금은 챗봇·얼굴분석과 같은 데모 계정을 쓴다 — 앱에서 로그인 없이 호출할 수 있어야
-    하고, 세 기능의 데이터가 한 사용자에게 모여야 리포트에서 같이 볼 수 있기 때문이다.
-    """
-    return get_demo_user()
 
 
 def _parse_date(raw, field_name):
@@ -56,14 +44,12 @@ def _date_range(params):
 class SymptomTypeListView(generics.ListAPIView):
     """앱의 원터치 기록 버튼 목록. 비활성화된 증상은 빠진다."""
 
-    permission_classes = [AllowAny]
     serializer_class = SymptomTypeSerializer
     pagination_class = None
     queryset = SymptomType.objects.filter(is_active=True)
 
 
 class SymptomLogListCreateView(generics.ListCreateAPIView):
-    permission_classes = [AllowAny]
     serializer_class = SymptomLogSerializer
     pagination_class = None
 
@@ -71,32 +57,30 @@ class SymptomLogListCreateView(generics.ListCreateAPIView):
         start, end = _date_range(self.request.query_params)
         return (
             SymptomLog.objects
-            .filter(user=current_user(self.request), occurred_at__date__gte=start, occurred_at__date__lte=end)
+            .filter(user=self.request.user, occurred_at__date__gte=start, occurred_at__date__lte=end)
             .select_related('symptom_type')
         )
 
     def perform_create(self, serializer):
-        serializer.save(user=current_user(self.request), source=SymptomLog.Source.MANUAL)
+        serializer.save(user=self.request.user, source=SymptomLog.Source.MANUAL)
 
 
 class SymptomLogDetailView(generics.RetrieveDestroyAPIView):
     """원터치 기록은 잘못 누르기 쉬워서 취소(DELETE)가 필수다."""
 
-    permission_classes = [AllowAny]
     serializer_class = SymptomLogSerializer
 
     def get_queryset(self):
-        return SymptomLog.objects.filter(user=current_user(self.request)).select_related('symptom_type')
+        return SymptomLog.objects.filter(user=self.request.user).select_related('symptom_type')
 
 
 class DailyCheckInListView(generics.ListAPIView):
-    permission_classes = [AllowAny]
     serializer_class = DailyCheckInSerializer
     pagination_class = None
 
     def get_queryset(self):
         start, end = _date_range(self.request.query_params)
-        return DailyCheckIn.objects.filter(user=current_user(self.request), date__gte=start, date__lte=end)
+        return DailyCheckIn.objects.filter(user=self.request.user, date__gte=start, date__lte=end)
 
 
 class TodayCheckInView(APIView):
@@ -106,14 +90,12 @@ class TodayCheckInView(APIView):
     `completed: false` 를 200 으로 돌려준다. 앱이 예외 처리 없이 화면을 그릴 수 있다.
     """
 
-    permission_classes = [AllowAny]
-
     def get(self, request):
-        check_in = DailyCheckIn.objects.filter(user=current_user(request), date=timezone.localdate()).first()
+        check_in = DailyCheckIn.objects.filter(user=request.user, date=timezone.localdate()).first()
         return Response(self._payload(check_in))
 
     def put(self, request):
-        user = current_user(request)
+        user = request.user
         today = timezone.localdate()
         existed = DailyCheckIn.objects.filter(user=user, date=today).exists()
 
@@ -145,10 +127,8 @@ class WeeklyReportView(APIView):
     무료 티어 한도도 아껴야 하기 때문이다. `?refresh=1` 로 강제로 다시 만들 수 있다.
     """
 
-    permission_classes = [AllowAny]
-
     def get(self, request):
-        user = current_user(request)
+        user = request.user
         raw_week = request.query_params.get('week')
         week_start, _ = week_bounds(_parse_date(raw_week, 'week') if raw_week else timezone.localdate())
 
@@ -174,7 +154,5 @@ class WeeklyReportView(APIView):
 class StreakView(APIView):
     """기록 지속 현황 — 홈 화면과 성공 지표(2주 연속 주 5일) 확인용."""
 
-    permission_classes = [AllowAny]
-
     def get(self, request):
-        return Response(build_streak(current_user(request)))
+        return Response(build_streak(request.user))

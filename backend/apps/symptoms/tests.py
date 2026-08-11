@@ -7,22 +7,17 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.users.demo import get_demo_user
-
 from .analysis import build_streak, week_bounds
 from .models import DailyCheckIn, SymptomLog, SymptomType
 
 
 class SymptomApiTestCase(APITestCase):
-    """마이그레이션 0002 가 증상 마스터를 넣어주므로 별도 fixture 는 없다.
-
-    실제 인증이 붙기 전까지 API 는 챗봇·얼굴분석과 같은 데모 계정으로 동작하므로,
-    테스트도 로그인 없이 호출하고 데이터는 그 계정에 쌓인다.
-    """
+    """마이그레이션 0002 가 증상 마스터를 넣어주므로 별도 fixture 는 없다."""
 
     def setUp(self):
-        self.user = get_demo_user()
+        self.user = get_user_model().objects.create_user(username='seoyoung', password='pw')
         self.other = get_user_model().objects.create_user(username='someone-else', password='pw')
+        self.client.force_authenticate(self.user)
         self.hot_flash = SymptomType.objects.get(code='hot_flash')
 
 
@@ -41,10 +36,12 @@ class SymptomTypeListTests(SymptomApiTestCase):
 
         self.assertNotIn('dryness', codes)
 
-    def test_callable_without_login(self):
+    def test_requires_authentication(self):
+        self.client.force_authenticate(None)
+
         response = self.client.get(reverse('symptoms:type-list'))
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
 class SymptomLogTests(SymptomApiTestCase):
