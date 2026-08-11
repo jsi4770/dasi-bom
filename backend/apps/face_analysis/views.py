@@ -1,7 +1,9 @@
-from rest_framework import generics, permissions, status
+from rest_framework import generics, status
 from rest_framework.parsers import MultiPartParser
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from apps.users.demo import get_demo_user
 from .analysis import NoFaceDetectedError, analyze_face_redness
 from .models import FaceAnalysis
 from .serializers import FaceAnalysisSerializer, FaceAnalysisUploadSerializer
@@ -11,12 +13,12 @@ class FaceAnalysisListCreateView(generics.ListCreateAPIView):
     """GenericAPIView (not a bare APIView) so DRF's browsable API can
     introspect get_serializer_class() and render the image upload form."""
 
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [AllowAny]
     parser_classes = [MultiPartParser]
     queryset = FaceAnalysis.objects.all()
 
     def get_queryset(self):
-        return FaceAnalysis.objects.filter(user=self.request.user)
+        return FaceAnalysis.objects.filter(user=get_demo_user())
 
     def get_serializer_class(self):
         if self.request.method == 'POST':
@@ -34,7 +36,7 @@ class FaceAnalysisListCreateView(generics.ListCreateAPIView):
             return Response({'detail': str(exc)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
         analysis = FaceAnalysis.objects.create(
-            user=request.user,
+            user=get_demo_user(),
             image=image,
             redness_score=result['redness_score'],
             severity=result['severity'],

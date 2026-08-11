@@ -25,7 +25,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import {
-  ChatbotApiError,
+  ApiError,
   ChatMessage,
   createChatSession,
   fetchMessageSpeechFile,
@@ -83,7 +83,7 @@ export default function ChatScreen() {
   }
 
   function describeError(error: unknown, fallback: string) {
-    return error instanceof ChatbotApiError ? error.message : fallback;
+    return error instanceof ApiError ? error.message : fallback;
   }
 
   async function handleSendText() {

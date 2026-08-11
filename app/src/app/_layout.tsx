@@ -15,6 +15,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="chat" options={{ headerShown: false }} />
         <Stack.Screen name="face-capture" options={{ headerShown: false }} />
+        <Stack.Screen name="face-result" options={{ headerShown: false }} />
       </Stack>
     </ThemeProvider>
   );
