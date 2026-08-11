@@ -1,7 +1,7 @@
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import DailyCheckIn, SymptomLog, SymptomType
+from .models import DailyCheckIn, SymptomLog, SymptomType, WeeklyReport
 
 
 class SymptomTypeSerializer(serializers.ModelSerializer):
@@ -40,3 +40,9 @@ class DailyCheckInSerializer(serializers.ModelSerializer):
             'sleep_hours', 'memo', 'created_at', 'updated_at',
         ]
         read_only_fields = ['date', 'created_at', 'updated_at']
+
+
+class WeeklyReportSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WeeklyReport
+        fields = ['week_start', 'stats', 'summary_text', 'generated_at']
