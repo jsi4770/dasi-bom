@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import {
   RecordingPresets,
   requestRecordingPermissionsAsync,
+  setAudioModeAsync,
   useAudioPlayer,
   useAudioPlayerStatus,
   useAudioRecorder,
@@ -114,6 +115,7 @@ export default function ChatScreen() {
       return;
     }
     setErrorText(null);
+    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
     await recorder.prepareToRecordAsync();
     recorder.record();
   }
