@@ -29,7 +29,9 @@ export function WarmScreen({ header, children, scrollable = true }: WarmScreenPr
           <View style={styles.inner}>{children}</View>
         </ScrollView>
       ) : (
-        <View style={[styles.inner, styles.staticContent]}>{children}</View>
+        <View style={styles.staticWrapper}>
+          <View style={[styles.inner, styles.staticContent]}>{children}</View>
+        </View>
       )}
     </View>
   );
@@ -45,6 +47,12 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
+    alignItems: 'center',
+  },
+  // scrollable=false 경로: 넓은 화면(웹)에서 scrollContent와 동일하게 inner 블록을
+  // 뷰포트 전체 기준 가운데로 오게 함(WarmComingSoon 등에서 사용).
+  staticWrapper: {
+    flex: 1,
     alignItems: 'center',
   },
   inner: {

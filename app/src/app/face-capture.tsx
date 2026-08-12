@@ -37,7 +37,7 @@ export default function FaceCaptureScreen() {
           <ThemedText type="default" themeColor="textSecondary" style={styles.centerText}>
             얼굴 사진으로 피부 상태를 확인하려면{'\n'}카메라 접근을 허용해주세요.
           </ThemedText>
-          <TouchableOpacity style={styles.primaryButton} onPress={requestPermission}>
+          <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
             <ThemedText type="default" style={styles.primaryButtonText}>
               권한 허용하기
             </ThemedText>
@@ -282,6 +282,16 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     flex: 1,
+    backgroundColor: Warm.primaryDeep,
+    borderRadius: Spacing.three,
+    paddingVertical: Spacing.three,
+    alignItems: 'center',
+  },
+  // permissionContent(세로 column) 전용 — previewButtonRow(가로 row)의 primaryButton과
+  // 같은 flex:1을 쓰면 세로 컨테이너에서 남은 세로 공간을 전부 채워버려서 버튼이 길게 늘어남.
+  // 가로폭만 채우도록 flex 대신 width로 분리.
+  permissionButton: {
+    width: '100%',
     backgroundColor: Warm.primaryDeep,
     borderRadius: Spacing.three,
     paddingVertical: Spacing.three,
