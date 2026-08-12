@@ -1,6 +1,6 @@
 // 백엔드 연동 전 임시 목업 데이터.
-// 필드 이름은 backend/apps/symptoms 응답 스키마(README 참고)와 맞춰뒀다 —
-// GET /api/symptoms/types/, GET /api/symptoms/checkins/today/ 로 교체할 때 타입 변경 없이 붙일 수 있게.
+// 필드 이름은 backend/apps/symptoms 응답 스키마(README 참고)와 맞춰두었다 —
+// GET /api/symptoms/types/, GET /api/symptoms/checkins/today/ 로 교체할 때 타입 변경 없이 붙일 수 있게 하였다
 
 export type SymptomType = {
   code: string;
