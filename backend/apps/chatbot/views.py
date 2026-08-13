@@ -5,11 +5,9 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
-from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.users.demo import get_demo_user
 from . import gemini
 from .models import ChatMessage, ChatSession
 from .serializers import ChatMessageSerializer, ChatSessionSerializer
@@ -26,10 +24,6 @@ GEMINI_ERROR_RESPONSES = {
 }
 
 
-def _current_user():
-    return get_demo_user()
-
-
 def _gemini_error_response(exc):
     for exc_type, (code, message) in GEMINI_ERROR_RESPONSES.items():
         if isinstance(exc, exc_type):
@@ -39,14 +33,13 @@ def _gemini_error_response(exc):
 
 class ChatSessionListCreateView(generics.ListCreateAPIView):
     serializer_class = ChatSessionSerializer
-    permission_classes = [AllowAny]
     pagination_class = None
 
     def get_queryset(self):
-        return ChatSession.objects.filter(user=_current_user())
+        return ChatSession.objects.filter(user=self.request.user)
 
     def perform_create(self, serializer):
-        serializer.save(user=_current_user())
+        serializer.save(user=self.request.user)
 
 
 class ChatMessageListCreateView(generics.ListCreateAPIView):
@@ -58,12 +51,11 @@ class ChatMessageListCreateView(generics.ListCreateAPIView):
     """
 
     serializer_class = ChatMessageSerializer
-    permission_classes = [AllowAny]
     pagination_class = None
 
     def get_session(self):
         return get_object_or_404(
-            ChatSession, pk=self.kwargs['session_id'], user=_current_user()
+            ChatSession, pk=self.kwargs['session_id'], user=self.request.user
         )
 
     def get_queryset(self):
@@ -113,11 +105,9 @@ class ChatMessageListCreateView(generics.ListCreateAPIView):
 class ChatMessageSpeechView(APIView):
     """메시지 텍스트를 음성(WAV)으로 합성해 돌려준다. 오디오는 저장하지 않고 매번 새로 생성한다."""
 
-    permission_classes = [AllowAny]
-
     def get(self, request, message_id):
         message = get_object_or_404(
-            ChatMessage, pk=message_id, session__user=_current_user()
+            ChatMessage, pk=message_id, session__user=request.user
         )
         try:
             wav_bytes = gemini.synthesize_speech(message.text)
