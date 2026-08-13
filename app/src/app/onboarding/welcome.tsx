@@ -6,7 +6,7 @@ import { WarmButton } from '@/components/warm/warm-button';
 import { WarmHeader } from '@/components/warm/warm-header';
 import { WarmInfoNote } from '@/components/warm/warm-info-note';
 import { WarmScreen } from '@/components/warm/warm-screen';
-import { Warm } from '@/constants/theme';
+import { blobDecorationStyle, Warm } from '@/constants/theme';
 
 const HELP_ITEMS = [
   '홍조·발한 등 증상을 기록하고 싶은 분',
@@ -78,15 +78,15 @@ const styles = StyleSheet.create({
   blobYellow: {
     width: 150,
     height: 150,
-    backgroundColor: Warm.secondarySoft,
-    top: -6,
+    ...blobDecorationStyle(Warm.secondary),
+    top: 0,
     left: 14,
   },
   blobGreen: {
     width: 120,
     height: 120,
-    backgroundColor: Warm.accentSoftBg,
-    bottom: -4,
+    ...blobDecorationStyle(Warm.accentSoft),
+    bottom: 0,
     right: 20,
   },
   illustrationPlaceholder: {

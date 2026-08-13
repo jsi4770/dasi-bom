@@ -5,7 +5,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { WarmScreen } from '@/components/warm/warm-screen';
 import { MOCK_ROUTINE_STATUS, MOCK_WEEKLY_STATS } from '@/constants/mock-data';
-import { Warm } from '@/constants/theme';
+import { blobDecorationStyle, Warm } from '@/constants/theme';
 
 function ChevronRight({ color }: { color: string }) {
   return (
@@ -147,7 +147,13 @@ export default function HomeScreen() {
           onPress={() => router.push('/chat')}
           accessibilityRole="button"
           style={({ pressed }) => [styles.iconRow, pressed && styles.pressed]}>
-          <ThemedText style={styles.iconRowEmoji}>💬</ThemedText>
+          <View style={styles.iconRowIconBadge}>
+            <SymbolView
+              name={{ ios: 'bubble.left.and.bubble.right.fill', android: 'chat', web: 'chat' }}
+              size={20}
+              tintColor={Warm.primaryStrong}
+            />
+          </View>
           <View style={styles.iconRowText}>
             <ThemedText style={styles.routineLabel}>챗봇과 이야기 나누기</ThemedText>
             <ThemedText type="small" themeColor="textSecondary">
@@ -161,7 +167,13 @@ export default function HomeScreen() {
           onPress={() => router.push('/face-capture')}
           accessibilityRole="button"
           style={({ pressed }) => [styles.iconRow, pressed && styles.pressed]}>
-          <ThemedText style={styles.iconRowEmoji}>🤳</ThemedText>
+          <View style={styles.iconRowIconBadge}>
+            <SymbolView
+              name={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }}
+              size={20}
+              tintColor={Warm.primaryStrong}
+            />
+          </View>
           <View style={styles.iconRowText}>
             <ThemedText style={styles.routineLabel}>얼굴 사진·건강 데이터 연결</ThemedText>
             <ThemedText type="small" themeColor="textSecondary">
@@ -198,12 +210,12 @@ const styles = StyleSheet.create({
   },
   heroBlob: {
     position: 'absolute',
-    right: -30,
-    top: -28,
+    right: 0,
+    top: -40,
     width: 130,
     height: 130,
     borderRadius: 999,
-    backgroundColor: Warm.accentSoftBg,
+    ...blobDecorationStyle(Warm.accentSoft),
   },
   heroTitle: {
     fontSize: 22,
@@ -246,12 +258,12 @@ const styles = StyleSheet.create({
   },
   hotFlashBlob: {
     position: 'absolute',
-    right: -20,
-    top: -12,
-    width: 140,
-    height: 140,
+    right: 0,
+    top: -38,
+    width: 90,
+    height: 90,
     borderRadius: 999,
-    backgroundColor: Warm.secondarySoft,
+    ...blobDecorationStyle(Warm.secondary),
   },
   statLabel: {
     fontSize: 14,
@@ -376,8 +388,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Warm.border,
   },
-  iconRowEmoji: {
-    fontSize: 24,
+  iconRowIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Warm.primarySoft,
+    flexShrink: 0,
   },
   iconRowText: {
     flex: 1,

@@ -2,7 +2,13 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useRef, useState } from 'react';
-import { ActivityIndicator, Dimensions, StyleSheet, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+  type LayoutChangeEvent,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -10,14 +16,12 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing, Warm } from '@/constants/theme';
 import { ApiError, uploadFaceAnalysis } from '@/lib/api';
 
-// 얼굴 타원 가이드 크기. 화면 폭 기준으로 잡아서 기기마다 비슷한 비율로 보이게 함.
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const OVAL_WIDTH = SCREEN_WIDTH * 0.7;
-const OVAL_HEIGHT = OVAL_WIDTH * 1.3;
-
 export default function FaceCaptureScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [isCameraReady, setIsCameraReady] = useState(false);
+  // CameraView가 실제로 렌더된 영역(윈도우 크기가 아니라)을 기준으로 가이드를 그리기 위해
+  // onLayout으로 직접 측정한다 — 창 크기 변경/회전 시에도 다시 호출되어 자동으로 갱신된다.
+  const [cameraLayout, setCameraLayout] = useState({ width: 0, height: 0 });
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -120,8 +124,13 @@ export default function FaceCaptureScreen() {
     );
   }
 
+  function handleCameraLayout(e: LayoutChangeEvent) {
+    const { width, height } = e.nativeEvent.layout;
+    setCameraLayout({ width, height });
+  }
+
   return (
-    <View style={styles.fill}>
+    <View style={styles.fill} onLayout={handleCameraLayout}>
       <CameraView
         ref={cameraRef}
         style={styles.fill}
@@ -129,7 +138,9 @@ export default function FaceCaptureScreen() {
         onCameraReady={() => setIsCameraReady(true)}
       />
 
-      <FaceGuideOverlay />
+      {cameraLayout.width > 0 && cameraLayout.height > 0 && (
+        <FaceGuideOverlay width={cameraLayout.width} height={cameraLayout.height} />
+      )}
 
       <SafeAreaView style={styles.chrome} pointerEvents="box-none">
         <View style={styles.guideTextBox}>
@@ -157,29 +168,36 @@ export default function FaceCaptureScreen() {
 
 // 얼굴을 맞출 타원 가이드 + 눈높이 기준선.
 // 실시간 얼굴 인식은 하지 않고, 사용자가 스스로 정렬하도록 고정된 시각 가이드만 제공한다.
-function FaceGuideOverlay() {
-  const ovalTop = (Dimensions.get('window').height - OVAL_HEIGHT) / 2;
-  const ovalLeft = (SCREEN_WIDTH - OVAL_WIDTH) / 2;
-  const eyeLineTop = ovalTop + OVAL_HEIGHT * 0.38;
+// width/height는 window 전체가 아니라 CameraView가 실제로 렌더된 영역의 크기를 그대로 받아서,
+// 두 값 모두를 기준으로 타원 크기를 제한해 짧고 넓은 뷰포트(예: 데스크톱 브라우저 창)에서도
+// 위아래·좌우로 잘리지 않게 한다.
+function FaceGuideOverlay({ width, height }: { width: number; height: number }) {
+  const maxOvalWidth = width * 0.7;
+  const maxOvalHeight = height * 0.62;
+  const ovalWidth = Math.min(maxOvalWidth, maxOvalHeight / 1.3);
+  const ovalHeight = ovalWidth * 1.3;
+  const ovalTop = (height - ovalHeight) / 2;
+  const ovalLeft = (width - ovalWidth) / 2;
+  const eyeLineTop = ovalTop + ovalHeight * 0.38;
 
   return (
-    <View style={styles.fill} pointerEvents="none">
-      <View style={[styles.mask, { top: 0, height: ovalTop }]} />
-      <View style={[styles.mask, { bottom: 0, height: ovalTop }]} />
-      <View style={[styles.mask, { top: ovalTop, height: OVAL_HEIGHT, left: 0, width: ovalLeft }]} />
+    <View style={styles.overlay} pointerEvents="none">
+      <View style={[styles.mask, { top: 0, left: 0, right: 0, height: ovalTop }]} />
+      <View style={[styles.mask, { bottom: 0, left: 0, right: 0, height: ovalTop }]} />
+      <View style={[styles.mask, { top: ovalTop, height: ovalHeight, left: 0, width: ovalLeft }]} />
       <View
         style={[
           styles.mask,
-          { top: ovalTop, height: OVAL_HEIGHT, right: 0, width: ovalLeft },
+          { top: ovalTop, height: ovalHeight, right: 0, width: ovalLeft },
         ]}
       />
       <View
         style={[
           styles.ovalOutline,
-          { top: ovalTop, left: ovalLeft, width: OVAL_WIDTH, height: OVAL_HEIGHT },
+          { top: ovalTop, left: ovalLeft, width: ovalWidth, height: ovalHeight, borderRadius: ovalWidth },
         ]}
       />
-      <View style={[styles.eyeLine, { top: eyeLineTop, left: ovalLeft, width: OVAL_WIDTH }]} />
+      <View style={[styles.eyeLine, { top: eyeLineTop, left: ovalLeft, width: ovalWidth }]} />
     </View>
   );
 }
@@ -204,15 +222,19 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     paddingHorizontal: Spacing.four,
   },
+  // 오버레이 자체가 카메라 위에 절대 위치로 덮이므로(overlay 스타일), 각 마스크 조각은 자기 변에만
+  // 앵커를 지정한다 — left/right를 항상 같이 주면 폭이 충돌해 좌우 마스크가 겹쳐버린다.
   mask: {
     position: 'absolute',
-    left: 0,
-    right: 0,
     backgroundColor: MASK_COLOR,
+  },
+  // CameraView(styles.fill, flex:1)와 형제로 나란히 놓이는 오버레이 — flex:1을 쓰면 같은
+  // column에서 공간을 반씩 나눠 가져 카메라 절반 아래로 밀려나므로 absoluteFill로 완전히 덮는다.
+  overlay: {
+    ...StyleSheet.absoluteFill,
   },
   ovalOutline: {
     position: 'absolute',
-    borderRadius: OVAL_WIDTH,
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.9)',
     borderStyle: 'dashed',

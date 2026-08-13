@@ -9,7 +9,7 @@ export type WarmInfoNoteProps = {
   text: string;
 };
 
-export function WarmInfoNote({ icon = '📋', title, text }: WarmInfoNoteProps) {
+export function WarmInfoNote({ icon = 'i', title, text }: WarmInfoNoteProps) {
   return (
     <View style={styles.container}>
       <ThemedText style={styles.icon}>{icon}</ThemedText>
@@ -34,6 +34,8 @@ const styles = StyleSheet.create({
   },
   icon: {
     fontSize: 18,
+    fontWeight: '800',
+    color: Warm.primaryStrong,
   },
   body: {
     flex: 1,

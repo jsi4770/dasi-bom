@@ -6,7 +6,7 @@ import { WarmButton } from '@/components/warm/warm-button';
 import { WarmHeader } from '@/components/warm/warm-header';
 import { WarmInfoNote } from '@/components/warm/warm-info-note';
 import { WarmScreen } from '@/components/warm/warm-screen';
-import { Warm } from '@/constants/theme';
+import { blobDecorationStyle, Warm } from '@/constants/theme';
 
 export default function OnboardingSurveyResultScreen() {
   return (
@@ -52,12 +52,12 @@ const styles = StyleSheet.create({
   },
   titleBlob: {
     position: 'absolute',
-    right: -20,
-    top: -20,
+    right: 0,
+    top: -75,
     width: 130,
     height: 130,
     borderRadius: 999,
-    backgroundColor: Warm.accentSoftBg,
+    ...blobDecorationStyle(Warm.accentSoft),
   },
   title: {
     fontSize: 22,

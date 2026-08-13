@@ -5,7 +5,7 @@
 
 import '@/global.css';
 
-import { Platform } from 'react-native';
+import { Platform, type ViewStyle } from 'react-native';
 
 export const Colors = {
   light: {
@@ -82,27 +82,49 @@ export const Warm = {
 } as const;
 
 /**
- * 증상 심각도 표시용 — 팔레트 톤 안에서 명도 차이로 구분(피스타치 → 차이 → 캐롭 순으로 진해짐).
+ * 배경 원형 장식(블롭)을 단색 원 대신 흐릿하게 번진 얼룩처럼 보이게 한다.
+ * react-native-web(0.21)은 `experimental_backgroundImage`를 CSS로 옮기지 못해 웹에서 배경이
+ * 통째로 사라지므로 웹은 표준 `backgroundImage` 키를 따로 써야 한다. 그라디언트가 박스 경계
+ * 바로 앞(75%)까지 불투명을 유지하면 blur(30px)가 번질 여백이 부족해 박스 모서리가 사각형으로
+ * 잘려 보이길래(경계 클리핑) 45%부터 완전 투명으로 만들어 blur가 안에서 다 번지게 여유를 둔다.
+ */
+export function blobDecorationStyle(color: string): ViewStyle {
+  const gradient = `radial-gradient(circle, ${color} 0%, ${color} 20%, transparent 45%)`;
+  return Platform.OS === 'web'
+    ? ({ backgroundImage: gradient, filter: 'blur(30px)' } as ViewStyle)
+    : ({ experimental_backgroundImage: gradient, filter: 'blur(30px)' } as ViewStyle);
+}
+
+/**
+ * 증상 심각도 표시용 — 신호등 계열(초록→노랑/주황→빨강)로 직관적인 위험도를 전달한다.
  * fill/border는 항상 함께 써서(카드 위 원색 단독 대비가 낮음) 흰 배경 위에서도 형태가 또렷하게 보이게 하고,
  * 색만으로 정보를 전달하지 않도록 label 텍스트를 항상 같이 표기한다.
+ * 증상 기록 전용 팔레트 — 저녁 체크인은 방향이 반대라 [[CheckInColors]]를 따로 쓴다.
  */
 // 라벨은 backend/apps/symptoms/models.py의 SymptomLog.Severity(MILD/MODERATE/SEVERE) 한글 표기와 맞춤.
 export const SeverityColors = {
-  mild: { fill: Warm.accentSoft, soft: Warm.accentSoftBg, border: Warm.accentSoftStrong, label: '가벼움' },
-  moderate: { fill: Warm.secondary, soft: Warm.secondarySoft, border: Warm.secondaryStrong, label: '보통' },
-  severe: { fill: Warm.text, soft: '#E7E0D0', border: Warm.textDeep, label: '심함' },
+  mild: { fill: '#839958', soft: '#EEF1E4', border: '#5C6B3E', label: '가벼움' },
+  moderate: { fill: '#C79A4E', soft: '#F6E9D2', border: '#8A6425', label: '보통' },
+  severe: { fill: '#B0563F', soft: '#F3DFD8', border: '#7A3A29', label: '심함' },
 } as const;
 
 export type SeverityLevel = keyof typeof SeverityColors;
 
 /**
- * DailyCheckIn.Scale(1~5, 낮을수록 나쁨)용 색상 — SeverityColors와 방향이 반대라서
- * (증상은 심각도가 높을수록 진하게, 체크인은 값이 낮을수록/나쁠수록 진하게) 별도 헬퍼로 분리했다.
+ * DailyCheckIn.Scale(1~5, 낮을수록 나쁨)용 색상 — 증상 심각도(SeverityColors)와 의미 방향이 반대라서
+ * (증상은 심할수록 진하게, 체크인은 값이 낮을수록/나쁠수록 진하게) 팔레트를 완전히 분리했다.
+ * 기존 매핑 로직(<=2 나쁨 / ==3 보통 / 그 외 좋음)과 슬라이더 동작은 그대로 유지.
  */
+export const CheckInColors = {
+  low: '#B0563F', // 나쁨(1~2) — severe와 동일 계열의 경고색
+  neutral: '#C79A4E', // 보통(3)
+  high: '#839958', // 좋음(4~5) — 안정감을 주는 그린 계열
+} as const;
+
 export function checkInScaleColor(value: number) {
-  if (value <= 2) return SeverityColors.severe.fill;
-  if (value === 3) return SeverityColors.moderate.fill;
-  return SeverityColors.mild.fill;
+  if (value <= 2) return CheckInColors.low;
+  if (value === 3) return CheckInColors.neutral;
+  return CheckInColors.high;
 }
 
 export const Fonts = Platform.select({
@@ -140,5 +162,14 @@ export const Spacing = {
   six: 64,
 } as const;
 
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
-export const MaxContentWidth = 800;
+// 웹 탭바(components/app-tabs.web.tsx)는 콘텐츠 위에 position:absolute로 얹히는 오버레이라 실제
+// 렌더 높이만큼 하단 여백을 직접 확보해줘야 한다 — tabListContainer padding(16×2) +
+// innerContainer paddingVertical(8×2) + tabButtonView minHeight(44) + borderTopWidth(1) = 93.
+// 탭바 쪽 치수가 바뀌면 이 값도 함께 맞춰야 한다.
+const WEB_TAB_BAR_HEIGHT = 93;
+
+export const BottomTabInset = Platform.select({ ios: 50, android: 80, web: WEB_TAB_BAR_HEIGHT }) ?? 0;
+// 모바일 웹(QR 접속)을 기준 화면으로 보되, 큰 화면(PC 브라우저)에서 콘텐츠가 과도하게 늘어나지
+// 않도록 잡아주는 상한값. 특정 기기 해상도를 흉내내는 고정폭이 아니라 폭이 좁을 땐 100%로
+// 자연스럽게 줄어들고, 넓을 땐 이 값에서 멈추는 용도로만 쓴다.
+export const MaxContentWidth = 480;

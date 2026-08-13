@@ -8,7 +8,7 @@ import { WarmButton } from '@/components/warm/warm-button';
 import { WarmHeader } from '@/components/warm/warm-header';
 import { WarmScreen } from '@/components/warm/warm-screen';
 import { MENOPAUSE_SURVEY_OPTIONS } from '@/constants/mock-data';
-import { Warm } from '@/constants/theme';
+import { blobDecorationStyle, Warm } from '@/constants/theme';
 
 export default function OnboardingSurveyScreen() {
   const [choice, setChoice] = useState<number | null>(null);
@@ -73,12 +73,12 @@ const styles = StyleSheet.create({
   },
   titleBlob: {
     position: 'absolute',
-    right: -20,
-    top: -24,
+    right: 0,
+    top: -75,
     width: 130,
     height: 130,
     borderRadius: 999,
-    backgroundColor: Warm.accentSoftBg,
+    ...blobDecorationStyle(Warm.accentSoft),
   },
   title: {
     fontSize: 22,
