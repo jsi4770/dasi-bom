@@ -44,7 +44,8 @@
         {
           "microphonePermission": "챗봇에게 음성으로 말하려면 마이크 접근 권한이 필요합니다."
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,

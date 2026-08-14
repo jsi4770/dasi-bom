@@ -8,10 +8,18 @@ export type WarmScreenProps = {
   header?: ReactNode;
   children: ReactNode;
   scrollable?: boolean;
+  /** 기본은 크림 배경(Warm.background). 로그인/회원가입처럼 화면 전체가 하나의 흰 카드처럼
+   * 보이는 시안(Warm.card)을 쓸 때만 지정한다. */
+  backgroundColor?: string;
 };
 
 /** 온보딩/홈 화면 공통 뼈대: 상단 헤더(선택) + 세이프에어리어 대응 스크롤 영역. */
-export function WarmScreen({ header, children, scrollable = true }: WarmScreenProps) {
+export function WarmScreen({
+  header,
+  children,
+  scrollable = true,
+  backgroundColor = Warm.background,
+}: WarmScreenProps) {
   const insets = useSafeAreaInsets();
 
   const contentPlatformStyle = Platform.select({
@@ -20,7 +28,7 @@ export function WarmScreen({ header, children, scrollable = true }: WarmScreenPr
   });
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { backgroundColor }]}>
       {header}
       {scrollable ? (
         <ScrollView
