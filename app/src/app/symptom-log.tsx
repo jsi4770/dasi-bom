@@ -1,3 +1,4 @@
+import { SymbolView } from 'expo-symbols';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -19,7 +20,7 @@ import {
   type Severity,
   type TodaySymptomLog,
 } from '@/constants/mock-data';
-import { checkInScaleColor, SeverityColors, Warm } from '@/constants/theme';
+import { blobDecorationStyle, checkInScaleColor, SeverityColors, Warm } from '@/constants/theme';
 
 function nextSeverity(current: Severity | undefined): Severity | undefined {
   if (!current) return SEVERITY_CYCLE[0];
@@ -58,9 +59,10 @@ export default function SymptomLogScreen() {
   }
 
   return (
-    <WarmScreen header={<WarmHeader title="증상 기록" onBack={() => router.back()} />}>
+    <WarmScreen header={<WarmHeader title="증상 기록" variant="minimal" onBack={() => router.back()} />}>
       {/* 1. 오늘 상태 — 가장 큰 정보 단위 */}
       <View style={styles.statusBlock}>
+        <View style={styles.statusBlob} />
         <ThemedText style={styles.statusEyebrow}>오늘 상태</ThemedText>
         <ThemedText style={styles.statusHeadline}>
           {loggedCount === 0
@@ -104,7 +106,6 @@ export default function SymptomLogScreen() {
                   },
                   pressed && styles.pressed,
                 ]}>
-                <ThemedText style={styles.symptomEmoji}>{symptom.emoji}</ThemedText>
                 <ThemedText style={styles.symptomLabel}>{symptom.label}</ThemedText>
                 {/* 3. 상세 — 가장 작은 정보 단위(심각도), 색만이 아니라 텍스트로도 표시 */}
                 {severity ? (
@@ -127,10 +128,14 @@ export default function SymptomLogScreen() {
         accessibilityRole="button"
         accessibilityLabel="저녁 체크인 입력하기">
         {({ pressed }) => (
-          <WarmCard style={pressed ? styles.pressed : undefined}>
+          <WarmCard bordered={false} style={pressed ? styles.pressed : undefined}>
             <View style={styles.checkInRow}>
               <View style={styles.checkInIcon}>
-                <ThemedText style={styles.checkInIconText}>🌙</ThemedText>
+                <SymbolView
+                  name={{ ios: 'moon.fill', android: 'bedtime', web: 'bedtime' }}
+                  size={22}
+                  tintColor={Warm.primaryStrong}
+                />
               </View>
               <View style={styles.checkInTextBlock}>
                 <ThemedText style={styles.cardTitle}>저녁 체크인</ThemedText>
@@ -148,13 +153,14 @@ export default function SymptomLogScreen() {
 
       <View style={styles.spacer} />
 
+      {loggedCount > 0 && <ThemedText style={styles.selectedCount}>{loggedCount}가지 선택됨</ThemedText>}
       <WarmButton label="완료" onPress={() => router.back()} />
 
       <WarmBottomSheet visible={sheetVisible} onClose={() => setSheetVisible(false)} title="저녁 체크인">
         <ThemedText style={styles.sheetIntro}>오늘 하루가 어떠셨나요? 딱 두 가지만 알려주세요.</ThemedText>
 
         <WarmSlider
-          label="🌙 잠은 잘 주무셨나요?"
+          label="잠은 잘 주무셨나요?"
           min={CHECKIN_SCALE_MIN}
           max={CHECKIN_SCALE_MAX}
           value={sleepQuality}
@@ -166,7 +172,7 @@ export default function SymptomLogScreen() {
         />
 
         <WarmSlider
-          label="🙂 오늘 기분은 어떠세요?"
+          label="오늘 기분은 어떠세요?"
           min={CHECKIN_SCALE_MIN}
           max={CHECKIN_SCALE_MAX}
           value={mood}
@@ -186,6 +192,16 @@ export default function SymptomLogScreen() {
 const styles = StyleSheet.create({
   statusBlock: {
     gap: 6,
+    position: 'relative',
+  },
+  statusBlob: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    width: 140,
+    height: 140,
+    borderRadius: 999,
+    ...blobDecorationStyle(Warm.accentSoft),
   },
   statusEyebrow: {
     fontSize: 14,
@@ -196,9 +212,9 @@ const styles = StyleSheet.create({
   },
   statusHeadline: {
     fontSize: 24,
-    fontWeight: '900',
+    fontWeight: '800',
     lineHeight: 32,
-    color: Warm.text,
+    color: Warm.textDeep,
   },
   statusChipRow: {
     flexDirection: 'row',
@@ -228,7 +244,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: Warm.text,
+    color: Warm.textDeep,
   },
   sectionHint: {
     fontSize: 16,
@@ -243,17 +259,14 @@ const styles = StyleSheet.create({
   },
   symptomButton: {
     width: '31%',
-    minHeight: 100,
+    minHeight: 92,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    borderRadius: 20,
+    borderRadius: 16,
     borderWidth: 2,
-    paddingVertical: 14,
+    paddingVertical: 12,
     paddingHorizontal: 4,
-  },
-  symptomEmoji: {
-    fontSize: 26,
   },
   symptomLabel: {
     textAlign: 'center',
@@ -297,9 +310,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: Warm.primarySoft,
   },
-  checkInIconText: {
-    fontSize: 22,
-  },
   checkInTextBlock: {
     flex: 1,
     gap: 2,
@@ -307,7 +317,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: Warm.text,
+    color: Warm.textDeep,
   },
   checkInSubtext: {
     fontSize: 16,
@@ -321,6 +331,12 @@ const styles = StyleSheet.create({
   spacer: {
     flex: 1,
     minHeight: 12,
+  },
+  selectedCount: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Warm.textSecondary,
+    textAlign: 'center',
   },
   sheetIntro: {
     fontSize: 16,

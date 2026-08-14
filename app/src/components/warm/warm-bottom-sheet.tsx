@@ -60,7 +60,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(58, 46, 28, 0.4)',
+    backgroundColor: 'rgba(15, 61, 44, 0.35)',
   },
   sheetOuter: {
     width: '100%',

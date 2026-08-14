@@ -3,16 +3,15 @@ import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { WarmButton } from '@/components/warm/warm-button';
-import { WarmCard } from '@/components/warm/warm-card';
 import { WarmHeader } from '@/components/warm/warm-header';
 import { WarmInfoNote } from '@/components/warm/warm-info-note';
 import { WarmScreen } from '@/components/warm/warm-screen';
-import { Warm } from '@/constants/theme';
+import { blobDecorationStyle, Warm } from '@/constants/theme';
 
 const HELP_ITEMS = [
-  { emoji: '🔥', bg: Warm.secondary, text: '홍조·발한 등 증상을 기록하고 싶은 분' },
-  { emoji: '😴', bg: Warm.accentSoft, text: '수면과 기분 변화를 꾸준히 확인하고 싶은 분' },
-  { emoji: '🌿', bg: Warm.primary, text: '일상 속 작은 자기돌봄을 시작하고 싶은 분' },
+  '홍조·발한 등 증상을 기록하고 싶은 분',
+  '수면과 기분 변화를 꾸준히 확인하고 싶은 분',
+  '일상 속 작은 자기돌봄을 시작하고 싶은 분',
 ];
 
 export default function OnboardingWelcomeScreen() {
@@ -20,7 +19,7 @@ export default function OnboardingWelcomeScreen() {
     <WarmScreen
       header={
         // n28c(로그인 안내)는 이번 디자인 파일 범위 밖이라 아직 별도 화면이 없음 — 우선 설정 탭으로 연결
-        <WarmHeader title="오늘의 나" onBack={() => router.push('/settings')} />
+        <WarmHeader title="오늘의 나" variant="minimal" onBack={() => router.push('/settings')} />
       }>
       <View style={styles.illustration}>
         <View style={[styles.blob, styles.blobYellow]} />
@@ -33,25 +32,19 @@ export default function OnboardingWelcomeScreen() {
       </View>
 
       <View style={styles.titleBlock}>
-        <ThemedText style={styles.title}>{'오늘의 나에 오신 걸\n환영해요'}</ThemedText>
+        <ThemedText style={styles.title}>{'몸의 변화를,\n다시 들여다봐요'}</ThemedText>
         <ThemedText style={styles.subtitle}>
           {'완경기 증상을 편안하게 기록하고,\n내 몸의 변화를 함께 살펴봐요'}
         </ThemedText>
       </View>
 
-      <WarmCard>
-        <ThemedText style={styles.cardTitle}>이런 분께 도움이 돼요</ThemedText>
-        <View style={styles.helpList}>
-          {HELP_ITEMS.map((item) => (
-            <View key={item.text} style={styles.helpRow}>
-              <View style={[styles.helpIcon, { backgroundColor: item.bg }]}>
-                <ThemedText style={styles.helpEmoji}>{item.emoji}</ThemedText>
-              </View>
-              <ThemedText style={styles.helpText}>{item.text}</ThemedText>
-            </View>
-          ))}
-        </View>
-      </WarmCard>
+      <View style={styles.helpList}>
+        {HELP_ITEMS.map((text) => (
+          <ThemedText key={text} style={styles.helpText}>
+            {text}
+          </ThemedText>
+        ))}
+      </View>
 
       <WarmInfoNote
         title="꼭 알아두세요"
@@ -85,22 +78,22 @@ const styles = StyleSheet.create({
   blobYellow: {
     width: 150,
     height: 150,
-    backgroundColor: Warm.secondarySoft,
-    top: -6,
+    ...blobDecorationStyle(Warm.secondary),
+    top: 0,
     left: 14,
   },
   blobGreen: {
-    width: 110,
-    height: 110,
-    backgroundColor: Warm.primarySoft,
-    bottom: -4,
+    width: 120,
+    height: 120,
+    ...blobDecorationStyle(Warm.accentSoft),
+    bottom: 0,
     right: 20,
   },
   illustrationPlaceholder: {
     width: '100%',
     height: 180,
-    borderRadius: 32,
-    backgroundColor: 'rgba(253, 247, 241, 0.75)',
+    borderRadius: 28,
+    backgroundColor: 'rgba(251, 249, 243, 0.75)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
@@ -108,54 +101,28 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
   },
   titleBlock: {
-    gap: 8,
-    alignItems: 'center',
+    gap: 10,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '900',
-    lineHeight: 34,
-    textAlign: 'center',
-    color: Warm.text,
+    fontSize: 26,
+    fontWeight: '800',
+    lineHeight: 36,
+    color: Warm.textDeep,
   },
   subtitle: {
     // 카드가 아닌 화면 배경 위에 바로 놓여서 textSecondary(카드 전용)는 대비가 살짝 부족함 — text 사용.
     fontSize: 16,
     fontWeight: '500',
     lineHeight: 24,
-    textAlign: 'center',
-    color: Warm.text,
-  },
-  cardTitle: {
-    fontSize: 17,
-    fontWeight: '700',
     color: Warm.text,
   },
   helpList: {
-    gap: 12,
-  },
-  helpRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  helpIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: 'rgba(114, 92, 58, 0.18)',
-  },
-  helpEmoji: {
-    fontSize: 16,
+    gap: 8,
   },
   helpText: {
-    flex: 1,
-    fontSize: 15,
-    lineHeight: 22,
-    color: Warm.textSecondary,
+    fontSize: 16,
+    lineHeight: 25,
+    color: Warm.text,
   },
   spacer: {
     flex: 1,

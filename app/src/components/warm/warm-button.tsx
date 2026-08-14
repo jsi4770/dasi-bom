@@ -39,7 +39,7 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 999,
+    borderRadius: 18,
   },
   pressed: {
     opacity: 0.85,
@@ -49,13 +49,12 @@ const styles = StyleSheet.create({
     backgroundColor: Warm.primary,
     shadowColor: Warm.primary,
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.25,
     shadowRadius: 16,
     elevation: 3,
   },
   primaryLabel: {
-    // 흰 텍스트 on 매치(#809671)는 3.2:1 — WCAG AA "큰 텍스트" 기준(18.66px+ bold)을
-    // 만족하도록 19px bold 이상을 유지해야 대비 기준을 충족한다. 임의로 줄이지 말 것.
+    // 흰 텍스트 on 딥그린(#0F3D2C)은 12.2:1 — 대비는 여유롭지만 시니어 가독성을 위해 크게 유지.
     color: '#ffffff',
     fontSize: 19,
     fontWeight: '700',

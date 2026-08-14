@@ -10,12 +10,15 @@ export type WarmComingSoonProps = {
   description: string;
 };
 
-/** 이번 디자인 파일(완경기 웰니스 코칭.dc.html) 범위 밖이라 아직 내용이 없는 탭의 자리표시자. */
+/** 이번 디자인 파일(완경기 웰니스 코칭.dc.html) 범위 밖이라 아직 내용이 없는 탭의 자리표시자.
+ * emoji prop은 그림 이모지 대신 짧은 글자(예: 화면 제목 첫 글자)를 받아 텍스트 배지로 보여준다. */
 export function WarmComingSoon({ emoji, title, description }: WarmComingSoonProps) {
   return (
     <WarmScreen scrollable={false}>
       <View style={styles.center}>
-        <ThemedText style={styles.emoji}>{emoji}</ThemedText>
+        <View style={styles.emojiBadge}>
+          <ThemedText style={styles.emoji}>{emoji}</ThemedText>
+        </View>
         <ThemedText style={styles.title}>{title}</ThemedText>
         <ThemedText style={styles.description}>{description}</ThemedText>
         <View style={styles.badge}>
@@ -34,9 +37,19 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 32,
   },
-  emoji: {
-    fontSize: 40,
+  emojiBadge: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Warm.primarySoft,
     marginBottom: 4,
+  },
+  emoji: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: Warm.primaryStrong,
   },
   title: {
     fontSize: 18,

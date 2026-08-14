@@ -20,9 +20,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { SymbolView } from 'expo-symbols';
+
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { BottomTabInset, SeverityColors, Spacing, Warm } from '@/constants/theme';
 import {
   ApiError,
   ChatMessage,
@@ -198,19 +200,33 @@ export default function ChatScreen() {
           <View style={styles.inputRow}>
             <TouchableOpacity
               accessibilityLabel={recorderState.isRecording ? '녹음 중지 및 전송' : '음성으로 말하기'}
-              style={[styles.micButton, recorderState.isRecording && styles.micButtonActive]}
+              style={[
+                styles.micButton,
+                recorderState.isRecording && styles.micButtonActive,
+                (isSending || !sessionId) && styles.micButtonDisabled,
+              ]}
               onPress={handleMicPress}
               disabled={isSending || !sessionId}>
-              <ThemedText type="default" style={styles.micButtonText}>
-                {recorderState.isRecording ? '■' : '🎤'}
-              </ThemedText>
+              {recorderState.isRecording ? (
+                <SymbolView
+                  name={{ ios: 'stop.fill', android: 'stop', web: 'stop' }}
+                  size={20}
+                  tintColor="#ffffff"
+                />
+              ) : (
+                <SymbolView
+                  name={{ ios: 'mic.fill', android: 'mic', web: 'mic' }}
+                  size={20}
+                  tintColor="#ffffff"
+                />
+              )}
             </TouchableOpacity>
 
             <TextInput
               value={input}
               onChangeText={setInput}
               placeholder="메시지를 입력해주세요"
-              placeholderTextColor="#8E8E93"
+              placeholderTextColor={Warm.textTertiary}
               style={styles.input}
               editable={!isSending && !recorderState.isRecording}
               onSubmitEditing={handleSendText}
@@ -219,15 +235,25 @@ export default function ChatScreen() {
 
             <TouchableOpacity
               accessibilityLabel="메시지 전송"
-              style={styles.sendButton}
+              style={[
+                styles.sendButton,
+                (isSending || !input.trim() || !sessionId) && styles.sendButtonDisabled,
+              ]}
               onPress={handleSendText}
               disabled={isSending || !input.trim() || !sessionId}>
-              <ThemedText type="default" style={styles.sendButtonText}>
-                전송
-              </ThemedText>
+              <SymbolView
+                name={{ ios: 'paperplane.fill', android: 'send', web: 'send' }}
+                size={20}
+                tintColor="#ffffff"
+              />
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
+
+        {/* 웹 하단 탭바(app-tabs.web.tsx)가 콘텐츠 위에 오버레이로 얹히는 구조라, 그 높이만큼
+            KeyboardAvoidingView 바깥에 별도 여백을 둬서 입력창이 가리지 않게 한다. 네이티브는
+            탭바가 네비게이터가 자체적으로 공간을 차지하는 구조라 필요 없다. */}
+        {Platform.OS === 'web' && <View style={styles.webTabBarSpacer} />}
       </SafeAreaView>
     </ThemedView>
   );
@@ -257,8 +283,19 @@ function MessageBubble({
             accessibilityLabel="음성으로 듣기"
             style={styles.speechButton}
             onPress={onPlaySpeech}>
+            {!isLoadingSpeech && (
+              <SymbolView
+                name={
+                  isSpeaking
+                    ? { ios: 'pause.fill', android: 'pause', web: 'pause' }
+                    : { ios: 'speaker.wave.2.fill', android: 'volume_up', web: 'volume_up' }
+                }
+                size={14}
+                tintColor={Warm.textSecondary}
+              />
+            )}
             <ThemedText type="small" themeColor="textSecondary">
-              {isLoadingSpeech ? '음성 준비 중…' : isSpeaking ? '⏸ 재생 중지' : '🔊 음성으로 듣기'}
+              {isLoadingSpeech ? '음성 준비 중…' : isSpeaking ? '재생 중지' : '음성으로 듣기'}
             </ThemedText>
           </TouchableOpacity>
         )}
@@ -300,31 +337,34 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   bubble: {
-    maxWidth: '80%',
+    maxWidth: '88%',
     borderRadius: Spacing.three,
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
+    paddingVertical: Spacing.three,
     gap: Spacing.one,
   },
   bubbleAssistant: {
-    backgroundColor: '#F0F0F3',
-    borderBottomLeftRadius: Spacing.half,
+    backgroundColor: Warm.backgroundSubtle,
+    borderBottomLeftRadius: Spacing.one,
   },
   bubbleUser: {
-    backgroundColor: '#208AEF',
-    borderBottomRightRadius: Spacing.half,
+    backgroundColor: Warm.secondarySoft,
+    borderBottomRightRadius: Spacing.one,
   },
   bubbleUserText: {
-    color: '#ffffff',
+    color: Warm.secondaryStrong,
   },
   speechButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
     alignSelf: 'flex-start',
     marginTop: Spacing.half,
   },
   errorText: {
     paddingHorizontal: Spacing.three,
     paddingBottom: Spacing.one,
-    color: '#D64545',
+    color: SeverityColors.severe.fill,
   },
   inputRow: {
     flexDirection: 'row',
@@ -334,37 +374,40 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.two,
   },
   micButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F0F0F3',
+    width: 56,
+    height: 56,
+    borderRadius: Spacing.three,
+    backgroundColor: Warm.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   micButtonActive: {
-    backgroundColor: '#D64545',
+    backgroundColor: SeverityColors.severe.fill,
   },
-  micButtonText: {
-    fontSize: 18,
+  micButtonDisabled: {
+    opacity: 0.4,
   },
   input: {
     flex: 1,
-    height: 44,
-    borderRadius: 22,
-    paddingHorizontal: Spacing.three,
-    backgroundColor: '#F0F0F3',
-    fontSize: 16,
-  },
-  sendButton: {
-    backgroundColor: '#208AEF',
+    height: 56,
     borderRadius: Spacing.three,
     paddingHorizontal: Spacing.three,
-    height: 44,
+    backgroundColor: Warm.card,
+    fontSize: 16,
+    color: Warm.text,
+  },
+  sendButton: {
+    width: 56,
+    height: 56,
+    borderRadius: Spacing.three,
+    backgroundColor: Warm.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sendButtonText: {
-    color: '#ffffff',
-    fontWeight: '600',
+  sendButtonDisabled: {
+    opacity: 0.4,
+  },
+  webTabBarSpacer: {
+    height: BottomTabInset,
   },
 });
