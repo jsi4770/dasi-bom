@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
 User = get_user_model()
@@ -12,6 +13,10 @@ class SignupSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'password', 'email']
         read_only_fields = ['id']
         extra_kwargs = {'email': {'required': False}}
+
+    def validate_password(self, value):
+        validate_password(value)
+        return value
 
     def create(self, validated_data):
         # create_user() 가 비밀번호를 해싱해서 저장한다 — User(**validated_data) 로 직접
