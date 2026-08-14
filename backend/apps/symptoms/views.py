@@ -6,8 +6,15 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import DailyCheckIn, SymptomLog, SymptomType
-from .serializers import DailyCheckInSerializer, SymptomLogSerializer, SymptomTypeSerializer
+from .analysis import build_streak, build_weekly_stats, week_bounds
+from .models import DailyCheckIn, SymptomLog, SymptomType, WeeklyReport
+from .serializers import (
+    DailyCheckInSerializer,
+    SymptomLogSerializer,
+    SymptomTypeSerializer,
+    WeeklyReportSerializer,
+)
+from .summary import build_summary
 
 DEFAULT_RANGE_DAYS = 14
 
@@ -88,13 +95,14 @@ class TodayCheckInView(APIView):
         return Response(self._payload(check_in))
 
     def put(self, request):
+        user = request.user
         today = timezone.localdate()
-        existed = DailyCheckIn.objects.filter(user=request.user, date=today).exists()
+        existed = DailyCheckIn.objects.filter(user=user, date=today).exists()
 
         serializer = DailyCheckInSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         check_in, _ = DailyCheckIn.objects.update_or_create(
-            user=request.user,
+            user=user,
             date=today,
             defaults=serializer.validated_data,
         )
@@ -109,3 +117,42 @@ class TodayCheckInView(APIView):
             'completed': check_in is not None,
             'check_in': DailyCheckInSerializer(check_in).data if check_in else None,
         }
+
+
+class WeeklyReportView(APIView):
+    """주간 패턴 리포트.
+
+    숫자는 요청할 때마다 다시 집계하지만, **문장은 집계가 달라졌을 때만 새로 만든다.**
+    시연 도중 같은 주를 여러 번 열어도 매번 다른 문장이 나오면 곤란하고, Gemini
+    무료 티어 한도도 아껴야 하기 때문이다. `?refresh=1` 로 강제로 다시 만들 수 있다.
+    """
+
+    def get(self, request):
+        user = request.user
+        raw_week = request.query_params.get('week')
+        week_start, _ = week_bounds(_parse_date(raw_week, 'week') if raw_week else timezone.localdate())
+
+        stats = build_weekly_stats(user, week_start)
+        report = WeeklyReport.objects.filter(user=user, week_start=week_start).first()
+
+        forced = request.query_params.get('refresh') == '1'
+        reusable = report and report.summary_text and report.stats == stats and not forced
+
+        if reusable:
+            source = 'cached'
+        else:
+            summary, source = build_summary(stats)
+            report, _ = WeeklyReport.objects.update_or_create(
+                user=user,
+                week_start=week_start,
+                defaults={'stats': stats, 'summary_text': summary},
+            )
+
+        return Response({**WeeklyReportSerializer(report).data, 'summary_source': source})
+
+
+class StreakView(APIView):
+    """기록 지속 현황 — 홈 화면과 성공 지표(2주 연속 주 5일) 확인용."""
+
+    def get(self, request):
+        return Response(build_streak(request.user))
