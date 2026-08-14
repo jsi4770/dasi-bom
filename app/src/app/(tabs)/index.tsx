@@ -1,104 +1,158 @@
+import { SymbolView } from 'expo-symbols';
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { WarmButton } from '@/components/warm/warm-button';
-import { WarmCard } from '@/components/warm/warm-card';
-import { WarmHeader } from '@/components/warm/warm-header';
 import { WarmScreen } from '@/components/warm/warm-screen';
 import { MOCK_ROUTINE_STATUS, MOCK_WEEKLY_STATS } from '@/constants/mock-data';
-import { Warm } from '@/constants/theme';
+import { blobDecorationStyle, Warm } from '@/constants/theme';
 
-// 세 배지 모두 팔레트 안의 소프트 틴트(매치/차이/피스타치)로 통일 — 색상별로 다른 계열(주황/파랑/노랑)을
-// 쓰던 이전 방식은 산만해 보여서, 명도/채도가 비슷한 흙톤 3종 + 진한 캐롭 텍스트로 정리했다.
-const STAT_BADGES = [
-  {
-    key: 'hotFlash',
-    emoji: '🔥',
-    label: '홍조',
-    value: `${MOCK_WEEKLY_STATS.hotFlashCount}회`,
-    bg: Warm.secondarySoft,
-  },
-  {
-    key: 'sleep',
-    emoji: '😴',
-    label: '수면',
-    value: `${MOCK_WEEKLY_STATS.avgSleepHours}h`,
-    bg: Warm.accentSoftBg,
-  },
-  {
-    key: 'mood',
-    emoji: '🙂',
-    label: '기분',
-    value: MOCK_WEEKLY_STATS.moodLabel,
-    bg: Warm.primarySoft,
-  },
-];
+function ChevronRight({ color }: { color: string }) {
+  return (
+    <SymbolView
+      name={{ ios: 'chevron.right', android: 'arrow_forward', web: 'arrow_forward' }}
+      size={14}
+      tintColor={color}
+    />
+  );
+}
 
 export default function HomeScreen() {
   return (
-    <WarmScreen header={<WarmHeader title="홈" />}>
-      <View style={styles.hero}>
+    // 홈은 탭 루트라 뒤로가기가 필요 없어 헤더 없이 콘텐츠부터 시작한다 — 하단 탭바는 (tabs)/_layout.tsx가 담당.
+    <WarmScreen>
+      <View style={styles.heroBlock}>
+        <View style={styles.heroBlob} />
         <ThemedText style={styles.heroTitle}>오늘도 잘 지내고 계신가요?</ThemedText>
         <ThemedText style={styles.heroText}>
           오늘 기록한 증상이 없어요. 몸에 변화가 느껴지면 바로 남겨보세요.
         </ThemedText>
-        <WarmButton label="✍️  지금 증상 기록하기" onPress={() => router.push('/symptom-log')} />
       </View>
 
-      <WarmCard>
-        <ThemedText style={styles.cardTitle}>이번 주 내 몸 이야기</ThemedText>
-        <View style={styles.statRow}>
-          {STAT_BADGES.map((stat) => (
-            <View key={stat.key} style={[styles.statBadge, { backgroundColor: stat.bg }]}>
-              <ThemedText style={styles.statLabel}>
-                {stat.emoji} {stat.label}
-              </ThemedText>
-              <ThemedText style={styles.statValue}>{stat.value}</ThemedText>
+      <Pressable
+        onPress={() => router.push('/symptom-log')}
+        accessibilityRole="button"
+        style={({ pressed }) => [styles.ctaRow, pressed && styles.pressed]}>
+        <ThemedText style={styles.ctaLabel}>지금 증상 기록하기</ThemedText>
+        <ChevronRight color={Warm.secondaryStrong} />
+      </Pressable>
+
+      <View style={styles.section}>
+        <ThemedText style={styles.sectionTitle}>이번 주 내 몸 이야기</ThemedText>
+
+        <View style={styles.hotFlashHero}>
+          <View style={styles.hotFlashBlob} />
+          <ThemedText style={styles.statLabel}>홍조</ThemedText>
+          <View style={styles.hotFlashValueRow}>
+            <ThemedText style={styles.hotFlashValue}>{MOCK_WEEKLY_STATS.hotFlashCount}</ThemedText>
+            <ThemedText style={styles.hotFlashUnit}>회</ThemedText>
+          </View>
+          <View style={styles.subStatRow}>
+            <View style={styles.subStatCard}>
+              <ThemedText style={styles.statLabel}>수면</ThemedText>
+              <ThemedText style={styles.subStatValue}>{MOCK_WEEKLY_STATS.avgSleepHours}시간</ThemedText>
             </View>
-          ))}
+            <View style={styles.subStatCard}>
+              <ThemedText style={styles.statLabel}>기분</ThemedText>
+              <ThemedText style={styles.subStatValue}>{MOCK_WEEKLY_STATS.moodLabel}</ThemedText>
+            </View>
+          </View>
         </View>
-        <ThemedText type="small" themeColor="textSecondary">
-          {MOCK_WEEKLY_STATS.trendNote}
-        </ThemedText>
-        <WarmButton
-          label="7일 리포트 전체 보기 →"
-          variant="text"
+
+        <ThemedText style={styles.trendNote}>{MOCK_WEEKLY_STATS.trendNote}</ThemedText>
+
+        <Pressable
           onPress={() => router.push('/report')}
-        />
-      </WarmCard>
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.linkRow, pressed && styles.pressed]}>
+          <ThemedText style={styles.linkRowLabel}>7일 리포트 전체 보기</ThemedText>
+          <ChevronRight color={Warm.textDeep} />
+        </Pressable>
+      </View>
 
-      <WarmCard>
-        <ThemedText style={styles.cardTitle}>오늘의 루틴</ThemedText>
-        <View style={styles.routineRow}>
-          <View style={styles.routineText}>
-            <ThemedText style={styles.routineLabel}>💊 복약·영양제</ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
-              {MOCK_ROUTINE_STATUS.medicationSummary}
+      <View style={styles.section}>
+        <ThemedText style={styles.sectionTitle}>오늘의 루틴</ThemedText>
+        <View>
+          <Pressable
+            onPress={() => router.push('/care')}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.routineRow,
+              !MOCK_ROUTINE_STATUS.medicationDoneToday && styles.routineRowHighlight,
+              pressed && styles.pressed,
+            ]}>
+            <View
+              style={[styles.routineDot, MOCK_ROUTINE_STATUS.medicationDoneToday && styles.routineDotDone]}>
+              {MOCK_ROUTINE_STATUS.medicationDoneToday && (
+                <SymbolView
+                  name={{ ios: 'checkmark', android: 'check', web: 'check' }}
+                  size={13}
+                  tintColor="#ffffff"
+                />
+              )}
+            </View>
+            <View style={styles.routineText}>
+              <ThemedText style={styles.routineLabel}>복약·영양제</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {MOCK_ROUTINE_STATUS.medicationSummary}
+              </ThemedText>
+            </View>
+            <ThemedText
+              style={[
+                styles.routineAction,
+                !MOCK_ROUTINE_STATUS.medicationDoneToday && styles.routineActionEmphasis,
+              ]}>
+              루틴 설정
             </ThemedText>
-          </View>
-          <Pressable style={styles.routineButtonOutline} onPress={() => router.push('/care')}>
-            <ThemedText style={styles.routineButtonOutlineText}>루틴 설정</ThemedText>
+          </Pressable>
+
+          <Pressable
+            onPress={() => router.push('/care')}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.routineRow,
+              styles.routineRowLast,
+              !MOCK_ROUTINE_STATUS.meditationDoneToday && styles.routineRowHighlight,
+              pressed && styles.pressed,
+            ]}>
+            <View
+              style={[styles.routineDot, MOCK_ROUTINE_STATUS.meditationDoneToday && styles.routineDotDone]}>
+              {MOCK_ROUTINE_STATUS.meditationDoneToday && (
+                <SymbolView
+                  name={{ ios: 'checkmark', android: 'check', web: 'check' }}
+                  size={13}
+                  tintColor="#ffffff"
+                />
+              )}
+            </View>
+            <View style={styles.routineText}>
+              <ThemedText style={styles.routineLabel}>명상·스트레칭</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {MOCK_ROUTINE_STATUS.meditationSummary}
+              </ThemedText>
+            </View>
+            <ThemedText
+              style={[
+                styles.routineAction,
+                !MOCK_ROUTINE_STATUS.meditationDoneToday && styles.routineActionEmphasis,
+              ]}>
+              시작하기
+            </ThemedText>
           </Pressable>
         </View>
-        <View style={styles.routineRow}>
-          <View style={styles.routineText}>
-            <ThemedText style={styles.routineLabel}>🧘 명상·스트레칭</ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
-              {MOCK_ROUTINE_STATUS.meditationSummary}
-            </ThemedText>
-          </View>
-          <Pressable style={styles.routineButtonFilled} onPress={() => router.push('/care')}>
-            <ThemedText style={styles.routineButtonFilledText}>시작하기</ThemedText>
-          </Pressable>
-        </View>
-      </WarmCard>
+      </View>
 
-      <WarmCard>
-        <ThemedText style={styles.cardTitle}>마음 돌봄</ThemedText>
-        <View style={styles.iconRow}>
-          <View style={[styles.iconBadge, { backgroundColor: Warm.accentSoft }]}>
-            <ThemedText style={styles.iconBadgeEmoji}>💬</ThemedText>
+      <View style={styles.iconList}>
+        <Pressable
+          onPress={() => router.push('/chat')}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.iconRow, pressed && styles.pressed]}>
+          <View style={styles.iconRowIconBadge}>
+            <SymbolView
+              name={{ ios: 'bubble.left.and.bubble.right.fill', android: 'chat', web: 'chat' }}
+              size={20}
+              tintColor={Warm.primaryStrong}
+            />
           </View>
           <View style={styles.iconRowText}>
             <ThemedText style={styles.routineLabel}>챗봇과 이야기 나누기</ThemedText>
@@ -106,14 +160,19 @@ export default function HomeScreen() {
               오늘 어떠셨나요? 편하게 말씀해 보세요.
             </ThemedText>
           </View>
-        </View>
-        <WarmButton label="대화 시작하기" variant="text" onPress={() => router.push('/chat')} />
-      </WarmCard>
+          <ChevronRight color={Warm.textDeep} />
+        </Pressable>
 
-      <WarmCard>
-        <View style={styles.iconRow}>
-          <View style={[styles.iconBadge, { backgroundColor: Warm.secondary }]}>
-            <ThemedText style={styles.iconBadgeEmoji}>🤳</ThemedText>
+        <Pressable
+          onPress={() => router.push('/face-capture')}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.iconRow, pressed && styles.pressed]}>
+          <View style={styles.iconRowIconBadge}>
+            <SymbolView
+              name={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }}
+              size={20}
+              tintColor={Warm.primaryStrong}
+            />
           </View>
           <View style={styles.iconRowText}>
             <ThemedText style={styles.routineLabel}>얼굴 사진·건강 데이터 연결</ThemedText>
@@ -121,13 +180,9 @@ export default function HomeScreen() {
               피부와 홍조 변화를 참고 지표로 기록해요.
             </ThemedText>
           </View>
-        </View>
-        <WarmButton
-          label="사진 기록하기"
-          variant="text"
-          onPress={() => router.push('/face-capture')}
-        />
-      </WarmCard>
+          <ChevronRight color={Warm.textDeep} />
+        </Pressable>
+      </View>
 
       <View style={styles.footerLinks}>
         {/* 데모 모드 설정 / 로그인 안내 / 설정·데이터 관리 화면은 아직 없어서 우선 설정 탭으로 모음 */}
@@ -146,110 +201,201 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  hero: {
-    gap: 14,
-    borderRadius: 28,
-    padding: 20,
-    backgroundColor: Warm.heroBg,
-    borderWidth: 1,
-    borderColor: Warm.heroBorder,
+  pressed: {
+    opacity: 0.7,
+  },
+  heroBlock: {
+    position: 'relative',
+    gap: 8,
+  },
+  heroBlob: {
+    position: 'absolute',
+    right: 0,
+    top: -40,
+    width: 130,
+    height: 130,
+    borderRadius: 999,
+    ...blobDecorationStyle(Warm.accentSoft),
   },
   heroTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: Warm.heroTitle,
+    fontSize: 22,
+    fontWeight: '800',
+    lineHeight: 30,
+    color: Warm.textDeep,
   },
   heroText: {
     fontSize: 15,
     lineHeight: 22,
-    color: Warm.heroText,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
     color: Warm.text,
   },
-  statRow: {
+  ctaRow: {
     flexDirection: 'row',
-    gap: 10,
-  },
-  statBadge: {
-    flex: 1,
     alignItems: 'center',
-    gap: 3,
+    justifyContent: 'space-between',
+    minHeight: 60,
+    paddingHorizontal: 18,
     borderRadius: 18,
-    paddingVertical: 12,
-    paddingHorizontal: 4,
+    backgroundColor: Warm.secondarySoft,
+  },
+  ctaLabel: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: Warm.secondaryStrong,
+  },
+  section: {
+    gap: 4,
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: Warm.textDeep,
+    marginBottom: 12,
+  },
+  hotFlashHero: {
+    position: 'relative',
+    gap: 4,
+    marginBottom: 12,
+  },
+  hotFlashBlob: {
+    position: 'absolute',
+    right: 0,
+    top: -38,
+    width: 90,
+    height: 90,
+    borderRadius: 999,
+    ...blobDecorationStyle(Warm.secondary),
   },
   statLabel: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
     color: Warm.text,
   },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '900',
+  hotFlashValueRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 4,
+    marginBottom: 14,
+  },
+  hotFlashValue: {
+    fontSize: 34,
+    fontWeight: '800',
+    lineHeight: 38,
+    color: Warm.textDeep,
+  },
+  hotFlashUnit: {
+    fontSize: 16,
+    fontWeight: '600',
+    lineHeight: 24,
+    color: Warm.text,
+  },
+  subStatRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  subStatCard: {
+    flex: 1,
+    gap: 4,
+    borderRadius: 18,
+    padding: 14,
+    backgroundColor: Warm.backgroundSubtle,
+  },
+  subStatValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Warm.textDeep,
+  },
+  trendNote: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: Warm.textSecondary,
+    marginBottom: 10,
+  },
+  linkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 52,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: Warm.border,
+  },
+  linkRowLabel: {
+    fontSize: 16,
+    fontWeight: '600',
     color: Warm.textDeep,
   },
   routineRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
+    gap: 14,
+    minHeight: 58,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Warm.border,
+  },
+  routineRowLast: {
+    borderBottomWidth: 0,
+  },
+  routineRowHighlight: {
+    marginHorizontal: -14,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: 'rgba(15, 61, 44, 0.07)',
+  },
+  routineDot: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1.5,
+    borderColor: 'rgba(15, 61, 44, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  routineDotDone: {
+    borderWidth: 0,
+    backgroundColor: Warm.primary,
   },
   routineText: {
+    flex: 1,
     gap: 2,
   },
   routineLabel: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
     color: Warm.text,
   },
-  routineButtonOutline: {
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 999,
-    borderWidth: 1.5,
-    borderColor: Warm.border,
-    backgroundColor: Warm.card,
-  },
-  routineButtonOutlineText: {
+  routineAction: {
     fontSize: 14,
-    fontWeight: '700',
-    color: Warm.text,
+    fontWeight: '500',
+    color: Warm.textSecondary,
+    flexShrink: 0,
   },
-  routineButtonFilled: {
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 999,
-    // 작은 흰 텍스트라 primaryStrong(작은 텍스트 기준 AA 통과) 사용 — primary는 큰 굵은 텍스트 전용.
-    backgroundColor: Warm.primaryStrong,
-  },
-  routineButtonFilledText: {
-    fontSize: 14,
+  routineActionEmphasis: {
     fontWeight: '700',
-    color: '#ffffff',
+    color: Warm.textDeep,
+  },
+  iconList: {
+    borderTopWidth: 1,
+    borderTopColor: Warm.border,
   },
   iconRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
+    minHeight: 64,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Warm.border,
   },
-  iconBadge: {
-    width: 52,
-    height: 52,
+  iconRowIconBadge: {
+    width: 36,
+    height: 36,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: 'rgba(114, 92, 58, 0.18)',
-  },
-  iconBadgeEmoji: {
-    fontSize: 24,
+    backgroundColor: Warm.primarySoft,
+    flexShrink: 0,
   },
   iconRowText: {
     flex: 1,

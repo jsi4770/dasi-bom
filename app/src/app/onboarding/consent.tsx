@@ -3,7 +3,6 @@ import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { WarmButton } from '@/components/warm/warm-button';
-import { WarmCard } from '@/components/warm/warm-card';
 import { WarmHeader } from '@/components/warm/warm-header';
 import { WarmInfoNote } from '@/components/warm/warm-info-note';
 import { WarmScreen } from '@/components/warm/warm-screen';
@@ -16,7 +15,7 @@ function finishOnboarding() {
 
 export default function OnboardingConsentScreen() {
   return (
-    <WarmScreen header={<WarmHeader title="데이터 활용 동의" onBack={() => router.back()} />}>
+    <WarmScreen header={<WarmHeader title="데이터 활용 동의" variant="minimal" onBack={() => router.back()} />}>
       <View style={styles.titleBlock}>
         <ThemedText style={styles.title}>내 정보 활용 동의</ThemedText>
         <ThemedText style={styles.subtitle}>
@@ -25,24 +24,26 @@ export default function OnboardingConsentScreen() {
         </ThemedText>
       </View>
 
-      <WarmCard>
-        <ThemedText style={styles.cardTitle}>📷 얼굴 사진</ThemedText>
-        <ThemedText style={styles.cardBody}>
-          피부 상태와 홍조 변화를 참고하기 위해 얼굴 사진을 활용해요. 사진은 앱 내에서만 사용되며
-          외부에 공유되지 않아요.
-        </ThemedText>
-      </WarmCard>
+      <View style={styles.consentList}>
+        <View style={styles.consentItem}>
+          <ThemedText style={styles.cardTitle}>얼굴 사진</ThemedText>
+          <ThemedText style={styles.cardBody}>
+            피부 상태와 홍조 변화를 참고하기 위해 얼굴 사진을 활용해요. 사진은 앱 내에서만 사용되며
+            외부에 공유되지 않아요.
+          </ThemedText>
+        </View>
 
-      <WarmCard>
-        <ThemedText style={styles.cardTitle}>💓 건강 데이터 (수면·심박)</ThemedText>
-        <ThemedText style={styles.cardBody}>
-          Google Health 또는 목업 데이터의 수면·심박 정보를 일별 기록에 연결해요. 데이터 연동은
-          언제든지 중단할 수 있어요.
-        </ThemedText>
-      </WarmCard>
+        <View style={[styles.consentItem, styles.consentItemLast]}>
+          <ThemedText style={styles.cardTitle}>건강 데이터 (수면·심박)</ThemedText>
+          <ThemedText style={styles.cardBody}>
+            Google Health 또는 목업 데이터의 수면·심박 정보를 일별 기록에 연결해요. 데이터 연동은
+            언제든지 중단할 수 있어요.
+          </ThemedText>
+        </View>
+      </View>
 
       <WarmInfoNote
-        icon="⚠️"
+        icon="!"
         text="이 앱이 제공하는 모든 정보는 건강 참고 자료예요. 의료 진단·처방·임상 판단을 대신하지 않아요. 건강에 이상이 느껴지면 전문 의료진과 상담하세요."
       />
 
@@ -59,9 +60,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   title: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: Warm.text,
+    fontSize: 22,
+    fontWeight: '800',
+    color: Warm.textDeep,
   },
   subtitle: {
     // 카드가 아닌 화면 배경 위에 바로 놓여서 textSecondary(카드 전용)는 대비가 살짝 부족함 — text 사용.
@@ -69,10 +70,23 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: Warm.text,
   },
+  consentList: {
+    borderTopWidth: 1,
+    borderTopColor: Warm.border,
+  },
+  consentItem: {
+    gap: 6,
+    paddingVertical: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: Warm.border,
+  },
+  consentItemLast: {
+    borderBottomWidth: 0,
+  },
   cardTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: Warm.text,
+    color: Warm.textDeep,
   },
   cardBody: {
     fontSize: 14,
