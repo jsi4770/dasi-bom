@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { SymbolView } from 'expo-symbols';
+import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Warm } from '@/constants/theme';
@@ -8,9 +9,13 @@ export type WarmButtonProps = {
   onPress: () => void;
   variant?: 'primary' | 'secondary' | 'text';
   style?: StyleProp<ViewStyle>;
+  /** 시안(로그인/회원가입)의 "회원가입 없이 둘러보기" 버튼처럼 오른쪽에 화살표를 붙인다. */
+  trailingIcon?: boolean;
 };
 
-export function WarmButton({ label, onPress, variant = 'primary', style }: WarmButtonProps) {
+export function WarmButton({ label, onPress, variant = 'primary', style, trailingIcon }: WarmButtonProps) {
+  const iconColor = variant === 'primary' ? '#ffffff' : Warm.primaryStrong;
+
   return (
     <Pressable
       onPress={onPress}
@@ -22,14 +27,23 @@ export function WarmButton({ label, onPress, variant = 'primary', style }: WarmB
         pressed && styles.pressed,
         style,
       ]}>
-      <ThemedText
-        style={[
-          variant === 'primary' && styles.primaryLabel,
-          variant === 'secondary' && styles.secondaryLabel,
-          variant === 'text' && styles.textLabel,
-        ]}>
-        {label}
-      </ThemedText>
+      <View style={styles.labelRow}>
+        <ThemedText
+          style={[
+            variant === 'primary' && styles.primaryLabel,
+            variant === 'secondary' && styles.secondaryLabel,
+            variant === 'text' && styles.textLabel,
+          ]}>
+          {label}
+        </ThemedText>
+        {trailingIcon && (
+          <SymbolView
+            name={{ ios: 'chevron.right', android: 'arrow_forward', web: 'arrow_forward' }}
+            size={14}
+            tintColor={iconColor}
+          />
+        )}
+      </View>
     </Pressable>
   );
 }
@@ -43,6 +57,11 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.85,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   primary: {
     height: 60,
