@@ -102,6 +102,8 @@ python manage.py runserver
 | `GET` | `/api/symptoms/checkins/` | 기간 조회 |
 | `GET` | `/api/symptoms/reports/weekly/` | 주간 패턴 리포트 (`?week=2026-08-03`, 없으면 이번 주 / `?refresh=1`로 문장 재생성) |
 | `GET` | `/api/symptoms/streak/` | 기록 지속 현황 (연속 일수, 주별 달성) |
+| `GET` | `/api/symptoms/missed-days/` | 아무 기록도 없는 지난 날 (`?days=14`) — 챗봇이 물어볼 재료 |
+| `POST` | `/api/symptoms/logs/backfill/` | 챗봇이 대화로 받아낸 지난 날 증상 저장 |
 
 조회용 쿼리 파라미터는 `?date=2026-08-08` (하루) 또는 `?from=...&to=...` (기간)이고, 아무것도 안 주면 **최근 14일**입니다.
 
@@ -144,6 +146,38 @@ curl -H "Authorization: Bearer <access>" http://localhost:8000/api/symptoms/repo
 | `template` | 키가 없거나 호출 실패 → 규칙 기반 문장으로 폴백 |
 
 `GEMINI_API_KEY`가 없어도 리포트는 정상적으로 나갑니다.
+
+### 피부 데이터 · 진료 상담 안내
+
+리포트 `stats`에 두 절이 더 있습니다. 둘 다 조건이 안 맞으면 조용히 빠집니다.
+
+- **`skin_link`** — 같은 날의 얼굴 홍조 점수와 증상 기록을 나란히 놓습니다. **상관은 계산하지 않습니다.** 얼굴 분석이 194장 벤치마크에서 `r=0.22`로 나왔고 한 주에 사진이 두세 장뿐이라, 어떤 수치를 내도 근거가 되지 못합니다. 프롬프트에도 두 값을 인과로 엮지 말라고 명시했습니다. 사진이 없으면 `null`.
+- **`care_signal`** — "이 정도면 병원 가도 되나"(PRD 장면 3)에 답할 근거입니다. 기준을 넘은 항목만 보여주고, 진단이 아니라 "이 기록을 가지고 진료 때 이야기해 보시라"는 안내입니다. 임계값(주당 홍조 10회 / 못 잔 밤 3일 / 기분 저하 3일)은 **임상 근거가 아니라 시연용으로 잡은 값**입니다.
+
+### 챗봇 연동 (`missed-days` / `backfill`)
+
+PRD의 "며칠간 기록 안 된 과거 증상을 AI가 먼저 물어봄"을 위한 한 쌍입니다.
+
+```jsonc
+// GET /api/symptoms/missed-days/?days=14
+{ "lookback_days": 14,
+  "missed_days": [ { "date": "2026-08-14", "days_ago": 1, "weekday": "금요일" } ] }
+```
+
+체크인도 증상 기록도 없는 날만 나갑니다. **가까운 날부터** 나가고(2주 전 일을 먼저 묻는 건 어색합니다), **오늘은 빠집니다**(하루가 끝나기 전에 묻는 건 채근입니다).
+
+```jsonc
+// POST /api/symptoms/logs/backfill/
+{ "date": "2026-08-12",
+  "symptoms": [ { "code": "hot_flash", "severity": 3, "time_slot": "evening" },
+                { "code": "night_sweat" } ] }
+```
+
+- 증상은 **코드**로 보냅니다(`GET /types/`의 `code`).
+- `time_slot`은 "언제쯤이었어요?"에 답을 얻었을 때만 넣습니다 — `dawn` / `morning` / `afternoon` / `evening`.
+- **시각을 모르면 그 기록은 시간대 집계에서 빠집니다**(`time_estimated: true`). 채워 넣은 시각이 "주로 저녁 시간대"를 흔들면 안 되기 때문입니다. 총계에는 그대로 들어갑니다.
+- `source`는 서버가 정합니다 — 지난 날이면 `backfill`, 오늘이면 `chat`.
+- 30일보다 오래된 날은 거절합니다(기억이 정확하지 않습니다).
 
 ### 판단하지 않는 것
 

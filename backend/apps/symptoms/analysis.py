@@ -11,6 +11,8 @@ from datetime import timedelta
 from django.db.models import Count
 from django.utils import timezone
 
+from apps.face_analysis.models import FaceAnalysis
+
 from .models import DailyCheckIn, SymptomLog
 
 # (코드, 표시 이름, 시작 시각, 끝 시각) — 끝은 미포함
@@ -31,6 +33,14 @@ POOR_SLEEP_MAX = 2   # 1~2 를 "잘 못 잔 날"로 본다
 GOOD_SLEEP_MIN = 4   # 4~5 를 "잘 잔 날"로 본다
 
 GOAL_DAYS_PER_WEEK = 5  # 성공 지표: 주 5일 이상 기록
+
+# --- 진료 상담 안내 기준 ---
+# 아래 숫자는 임상 근거가 아니라 시연용으로 잡은 값이다. "병원에 갈 정도인지 판단할
+# 근거가 없다"(PRD 장면 3)는 문제에 답하려는 것이지, 진단하려는 게 아니다.
+# 실제 서비스로 가려면 전문가 검토가 필요하다.
+CARE_HOT_FLASH_PER_WEEK = 10   # 주당 홍조 기록
+CARE_POOR_SLEEP_NIGHTS = 3     # 주당 '잘 못 잤다'고 기록한 날
+CARE_LOW_MOOD_DAYS = 3         # 주당 기분 2점 이하인 날
 
 
 def week_bounds(day):
@@ -75,6 +85,8 @@ def build_weekly_stats(user, week_start):
         'time_slots': _slot_totals(logs),
         'check_in_averages': _check_in_averages(check_ins),
         'sleep_link': _sleep_link(logs, check_ins),
+        'skin_link': _skin_link(user, week_start, week_end, logs),
+        'care_signal': _care_signal(logs, check_ins),
         'missed_dates': _missed_dates(week_start, week_end, check_ins),
     }
 
@@ -88,10 +100,22 @@ def _symptom_breakdown(logs, prev_counts):
     rows = []
     for code, group in by_code.items():
         symptom = group[0].symptom_type
-        slots = Counter(slot_of(timezone.localtime(log.occurred_at).hour)[0] for log in group)
-        top_slot, top_n = slots.most_common(1)[0]
-        ratio = top_n / len(group)
         prev = prev_counts.get(code, 0)
+
+        # 챗봇이 소급 입력한 기록은 시각이 추정값이라 시간대 집계에서 뺀다.
+        # 넣으면 "주로 저녁 시간대" 가 채워 넣은 시각 때문에 흔들린다.
+        timed = [log for log in group if not log.time_estimated]
+        if not timed:
+            rows.append({
+                'code': code, 'label': symptom.label, 'emoji': symptom.emoji,
+                'count': len(group), 'prev_count': prev, 'delta': len(group) - prev,
+                'peak_slot': None, 'peak_slot_label': None, 'peak_ratio': None,
+            })
+            continue
+
+        slots = Counter(slot_of(timezone.localtime(log.occurred_at).hour)[0] for log in timed)
+        top_slot, top_n = slots.most_common(1)[0]
+        ratio = top_n / len(timed)
 
         rows.append({
             'code': code,
@@ -111,7 +135,10 @@ def _symptom_breakdown(logs, prev_counts):
 
 
 def _slot_totals(logs):
-    counts = Counter(slot_of(timezone.localtime(log.occurred_at).hour)[0] for log in logs)
+    counts = Counter(
+        slot_of(timezone.localtime(log.occurred_at).hour)[0]
+        for log in logs if not log.time_estimated
+    )
     return [
         {'code': code, 'label': label, 'count': counts.get(code, 0)}
         for code, label, *_ in TIME_SLOTS
@@ -161,6 +188,82 @@ def _sleep_link(logs, check_ins):
     }
 
 
+def _skin_link(user, week_start, week_end, logs):
+    """얼굴 사진 분석 점수와 같은 날 증상 기록을 나란히 놓는다.
+
+    **상관을 계산하지 않는다.** 얼굴 분석은 194장 벤치마크에서 Pearson r=0.22 로
+    피부 점수와 실제 홍조의 상관이 약하게 나왔고(PRD 향후 개선 과제), 한 주에
+    사진이 두세 장뿐이라 어떤 수치를 내도 근거가 되지 못한다. "이날은 이랬다"를
+    같이 보여주는 데까지만 한다 — 해석은 사람이 한다.
+    """
+    analyses = (
+        FaceAnalysis.objects
+        .filter(user=user, created_at__date__gte=week_start, created_at__date__lte=week_end)
+        .order_by('created_at')
+    )
+    if not analyses:
+        return None
+
+    hot_flashes_per_day = Counter(
+        timezone.localtime(log.occurred_at).date()
+        for log in logs if log.symptom_type.code == 'hot_flash'
+    )
+    logs_per_day = Counter(timezone.localtime(log.occurred_at).date() for log in logs)
+
+    days = []
+    for analysis in analyses:
+        day = timezone.localtime(analysis.created_at).date()
+        days.append({
+            'date': day.isoformat(),
+            'redness_score': round(analysis.redness_score, 1),
+            'severity': analysis.severity,
+            'hot_flash_logs': hot_flashes_per_day.get(day, 0),
+            'symptom_logs': logs_per_day.get(day, 0),
+        })
+
+    return {
+        'photo_days': len(days),
+        'average_redness': round(sum(d['redness_score'] for d in days) / len(days), 1),
+        'days': days,
+    }
+
+
+def _care_signal(logs, check_ins):
+    """"이 정도면 병원 가도 되나"에 답할 근거를 모은다 (PRD 장면 3).
+
+    진단이 아니다. 기준을 넘은 항목을 그대로 보여주고, 진료 때 이 기록을 가져가
+    보시라고 안내하는 용도다. 넘은 게 없으면 아무 말도 하지 않는다.
+    """
+    hot_flashes = sum(1 for log in logs if log.symptom_type.code == 'hot_flash')
+    poor_nights = sum(1 for c in check_ins if c.sleep_quality <= POOR_SLEEP_MAX)
+    low_mood_days = sum(1 for c in check_ins if c.mood <= 2)
+
+    reasons = []
+    if hot_flashes >= CARE_HOT_FLASH_PER_WEEK:
+        reasons.append({
+            'code': 'hot_flash_frequency',
+            'label': f'홍조가 이번 주 {hot_flashes}번 기록됐어요',
+            'value': hot_flashes,
+            'threshold': CARE_HOT_FLASH_PER_WEEK,
+        })
+    if poor_nights >= CARE_POOR_SLEEP_NIGHTS:
+        reasons.append({
+            'code': 'poor_sleep',
+            'label': f'잘 못 주무신 날이 {poor_nights}일이었어요',
+            'value': poor_nights,
+            'threshold': CARE_POOR_SLEEP_NIGHTS,
+        })
+    if low_mood_days >= CARE_LOW_MOOD_DAYS:
+        reasons.append({
+            'code': 'low_mood',
+            'label': f'기분이 가라앉은 날이 {low_mood_days}일이었어요',
+            'value': low_mood_days,
+            'threshold': CARE_LOW_MOOD_DAYS,
+        })
+
+    return {'suggested': bool(reasons), 'reasons': reasons}
+
+
 def _missed_dates(week_start, week_end, check_ins):
     """그 주에서 체크인이 없는 날. 오늘은 아직 저녁이 안 왔을 수 있어 빼둔다."""
     recorded = {c.date for c in check_ins}
@@ -173,6 +276,48 @@ def _missed_dates(week_start, week_end, check_ins):
             missed.append(day.isoformat())
         day += timedelta(days=1)
     return missed
+
+
+WEEKDAY_LABELS = ['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일']
+
+MISSED_DAYS_LOOKBACK = 14
+
+
+def build_missed_days(user, days=MISSED_DAYS_LOOKBACK, today=None):
+    """아무 기록도 없는 지난 날들. 챗봇이 "그날은 어떠셨어요?" 하고 물어볼 재료다.
+
+    체크인도 증상 기록도 없는 날만 센다. 둘 중 하나라도 있으면 그날은 이미 말한
+    셈이다. 오늘은 아직 저녁이 안 왔을 수 있으니 뺀다 — 하루가 끝나기도 전에
+    "오늘 기록이 없네요" 하고 묻는 건 채근이다.
+    """
+    today = today or timezone.localdate()
+    start = today - timedelta(days=days)
+    last_day = today - timedelta(days=1)
+
+    checked = set(
+        DailyCheckIn.objects
+        .filter(user=user, date__gte=start, date__lte=last_day)
+        .values_list('date', flat=True)
+    )
+    logged = {
+        timezone.localtime(moment).date()
+        for moment in SymptomLog.objects
+        .filter(user=user, occurred_at__date__gte=start, occurred_at__date__lte=last_day)
+        .values_list('occurred_at', flat=True)
+    }
+
+    missed, day = [], last_day
+    while day >= start:
+        if day not in checked and day not in logged:
+            missed.append({
+                'date': day.isoformat(),
+                'days_ago': (today - day).days,
+                'weekday': WEEKDAY_LABELS[day.weekday()],
+            })
+        day -= timedelta(days=1)
+
+    # 가까운 날부터. 챗봇이 2주 전 일을 먼저 묻는 건 어색하다.
+    return {'lookback_days': days, 'missed_days': missed}
 
 
 def build_streak(user, today=None):

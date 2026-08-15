@@ -7,6 +7,8 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from apps.face_analysis.models import FaceAnalysis
+
 from .analysis import build_streak, week_bounds
 from .models import DailyCheckIn, SymptomLog, SymptomType
 
@@ -283,6 +285,61 @@ class WeeklyReportTests(SymptomApiTestCase):
 
         self.assertIsNone(self.client.get(self.url).data['stats']['sleep_link'])
 
+    def _face_analysis(self, day, redness, user=None):
+        analysis = FaceAnalysis.objects.create(
+            user=user or self.user,
+            image='face_analysis/test.jpg',
+            redness_score=redness,
+            severity=FaceAnalysis.Severity.MODERATE,
+        )
+        # created_at 은 auto_now_add 라 만든 뒤에 날짜를 옮긴다.
+        FaceAnalysis.objects.filter(pk=analysis.pk).update(
+            created_at=timezone.make_aware(datetime.combine(day, time(9, 0))),
+        )
+        return analysis
+
+    def test_shows_skin_scores_beside_the_same_days_records(self):
+        self._log(self.monday, 19)
+        self._log(self.monday, 20)
+        self._face_analysis(self.monday, 70.0)
+
+        skin = self.client.get(self.url).data['stats']['skin_link']
+
+        self.assertEqual(skin['photo_days'], 1)
+        self.assertEqual(skin['days'][0]['redness_score'], 70.0)
+        self.assertEqual(skin['days'][0]['hot_flash_logs'], 2)
+
+    def test_skin_section_is_absent_without_photos(self):
+        self._log(self.monday, 20)
+
+        self.assertIsNone(self.client.get(self.url).data['stats']['skin_link'])
+
+    def test_skin_scores_do_not_leak_between_users(self):
+        self._face_analysis(self.monday, 70.0, user=self.other)
+
+        self.assertIsNone(self.client.get(self.url).data['stats']['skin_link'])
+
+    def test_care_signal_stays_quiet_below_the_threshold(self):
+        for hour in (19, 20):
+            self._log(self.monday, hour)
+
+        care = self.client.get(self.url).data['stats']['care_signal']
+
+        self.assertFalse(care['suggested'])
+        self.assertEqual(care['reasons'], [])
+
+    def test_care_signal_names_what_crossed_the_line(self):
+        for i in range(10):
+            self._log(self.monday, 9 + i)
+        for offset in range(3):
+            self._check_in(self.monday + timedelta(days=offset), sleep_quality=1, mood=1)
+
+        care = self.client.get(self.url).data['stats']['care_signal']
+
+        self.assertTrue(care['suggested'])
+        codes = {r['code'] for r in care['reasons']}
+        self.assertEqual(codes, {'hot_flash_frequency', 'poor_sleep', 'low_mood'})
+
     def test_reuses_the_sentence_while_the_numbers_are_unchanged(self):
         self._log(self.monday, 20)
 
@@ -327,6 +384,153 @@ class WeeklyReportTests(SymptomApiTestCase):
         )
 
         self.assertEqual(self.client.get(self.url).data['stats']['total_logs'], 0)
+
+
+class MissedDaysTests(SymptomApiTestCase):
+    def setUp(self):
+        super().setUp()
+        self.url = reverse('symptoms:missed-days')
+        self.today = timezone.localdate()
+
+    def _day(self, days_ago):
+        return self.today - timedelta(days=days_ago)
+
+    def test_lists_days_with_nothing_recorded_nearest_first(self):
+        DailyCheckIn.objects.create(user=self.user, date=self._day(1), sleep_quality=3, mood=3)
+
+        days = self.client.get(self.url, {'days': 4}).data['missed_days']
+
+        self.assertEqual([d['days_ago'] for d in days], [2, 3, 4])
+
+    def test_a_symptom_log_alone_counts_as_recorded(self):
+        SymptomLog.objects.create(
+            user=self.user,
+            symptom_type=self.hot_flash,
+            occurred_at=timezone.now() - timedelta(days=2),
+        )
+
+        days_ago = [d['days_ago'] for d in self.client.get(self.url, {'days': 3}).data['missed_days']]
+
+        self.assertNotIn(2, days_ago)
+
+    def test_today_is_never_asked_about(self):
+        """하루가 끝나기도 전에 "오늘 기록이 없네요" 하고 묻는 건 채근이다."""
+        days_ago = [d['days_ago'] for d in self.client.get(self.url, {'days': 3}).data['missed_days']]
+
+        self.assertNotIn(0, days_ago)
+
+    def test_includes_weekday_for_natural_phrasing(self):
+        day = self.client.get(self.url, {'days': 2}).data['missed_days'][0]
+
+        self.assertTrue(day['weekday'].endswith('요일'))
+
+    def test_rejects_out_of_range_lookback(self):
+        self.assertEqual(
+            self.client.get(self.url, {'days': 90}).status_code, status.HTTP_400_BAD_REQUEST,
+        )
+        self.assertEqual(
+            self.client.get(self.url, {'days': '이주일'}).status_code, status.HTTP_400_BAD_REQUEST,
+        )
+
+
+@override_settings(GEMINI_API_KEY='')  # 리포트를 부르는 테스트가 있어 외부 호출을 막는다
+class BackfillTests(SymptomApiTestCase):
+    def setUp(self):
+        super().setUp()
+        self.url = reverse('symptoms:log-backfill')
+        self.yesterday = timezone.localdate() - timedelta(days=1)
+
+    def test_saves_symptoms_the_chatbot_collected(self):
+        response = self.client.post(self.url, {
+            'date': self.yesterday.isoformat(),
+            'symptoms': [{'code': 'hot_flash', 'severity': 3, 'time_slot': 'evening'},
+                         {'code': 'insomnia'}],
+        }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(response.data['created']), 2)
+        self.assertEqual(SymptomLog.objects.filter(user=self.user).count(), 2)
+
+    def test_marks_the_source_so_reports_can_tell_them_apart(self):
+        self.client.post(self.url, {
+            'date': self.yesterday.isoformat(),
+            'symptoms': [{'code': 'hot_flash'}],
+        }, format='json')
+
+        self.assertEqual(SymptomLog.objects.get().source, SymptomLog.Source.BACKFILL)
+
+    def test_todays_entry_is_marked_as_chat_not_backfill(self):
+        self.client.post(self.url, {
+            'date': timezone.localdate().isoformat(),
+            'symptoms': [{'code': 'hot_flash'}],
+        }, format='json')
+
+        self.assertEqual(SymptomLog.objects.get().source, SymptomLog.Source.CHAT)
+
+    def test_unknown_time_is_flagged_so_it_skips_slot_stats(self):
+        self.client.post(self.url, {
+            'date': self.yesterday.isoformat(),
+            'symptoms': [{'code': 'hot_flash'}, {'code': 'insomnia', 'time_slot': 'dawn'}],
+        }, format='json')
+
+        by_code = {log.symptom_type.code: log for log in SymptomLog.objects.all()}
+        self.assertTrue(by_code['hot_flash'].time_estimated)
+        self.assertFalse(by_code['insomnia'].time_estimated)
+
+    def test_estimated_times_do_not_move_the_peak_slot(self):
+        """소급 기록이 시간대 집계를 흔들면 '주로 저녁 시간대'를 믿을 수 없게 된다."""
+        monday, _ = week_bounds(timezone.localdate())
+        for hour in (19, 20):
+            SymptomLog.objects.create(
+                user=self.user,
+                symptom_type=self.hot_flash,
+                occurred_at=timezone.make_aware(datetime.combine(monday, time(hour, 0))),
+            )
+        for _ in range(5):  # 시각 모르는 소급 기록이 정오에 잔뜩 쌓여도
+            SymptomLog.objects.create(
+                user=self.user,
+                symptom_type=self.hot_flash,
+                occurred_at=timezone.make_aware(datetime.combine(monday, time(12, 0))),
+                source=SymptomLog.Source.BACKFILL,
+                time_estimated=True,
+            )
+
+        top = self.client.get(reverse('symptoms:report-weekly')).data['stats']['symptoms'][0]
+
+        self.assertEqual(top['count'], 7)          # 총계에는 들어가고
+        self.assertEqual(top['peak_slot'], 'evening')  # 시간대는 흔들리지 않는다
+        self.assertEqual(top['peak_ratio'], 1.0)
+
+    def test_rejects_a_future_date(self):
+        response = self.client.post(self.url, {
+            'date': (timezone.localdate() + timedelta(days=1)).isoformat(),
+            'symptoms': [{'code': 'hot_flash'}],
+        }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_rejects_a_date_too_old_to_remember(self):
+        response = self.client.post(self.url, {
+            'date': (timezone.localdate() - timedelta(days=45)).isoformat(),
+            'symptoms': [{'code': 'hot_flash'}],
+        }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_rejects_an_unknown_symptom_code(self):
+        response = self.client.post(self.url, {
+            'date': self.yesterday.isoformat(),
+            'symptoms': [{'code': 'not_a_symptom'}],
+        }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_rejects_an_empty_list(self):
+        response = self.client.post(
+            self.url, {'date': self.yesterday.isoformat(), 'symptoms': []}, format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 class StreakTests(SymptomApiTestCase):

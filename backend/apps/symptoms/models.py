@@ -75,6 +75,13 @@ class SymptomLog(models.Model):
         default=Source.MANUAL,
         help_text='사용자가 직접 누른 기록인지, 챗봇이 대화로 받아낸 기록인지 구분',
     )
+    time_estimated = models.BooleanField(
+        default=False,
+        help_text=(
+            '시각을 특정하지 못해 채워 넣은 기록(주로 챗봇 소급 입력). '
+            '"주로 저녁 시간대" 같은 시간대 집계에서 제외된다.'
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -1,6 +1,12 @@
 from rest_framework import serializers
 
-from .models import Reminder, ReminderCompletion
+from .models import MindfulnessSession, Reminder, ReminderCompletion
+
+
+class MindfulnessSessionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MindfulnessSession
+        fields = ['id', 'code', 'title', 'description', 'total_seconds', 'steps']
 
 
 class ReminderSerializer(serializers.ModelSerializer):

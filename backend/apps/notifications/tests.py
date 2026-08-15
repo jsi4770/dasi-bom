@@ -4,7 +4,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import Reminder, ReminderCompletion
+from .models import MindfulnessSession, Reminder, ReminderCompletion
 
 
 class ReminderApiTestCase(APITestCase):
@@ -136,6 +136,40 @@ class ReminderCompleteTests(ReminderApiTestCase):
         response = self.client.post(reverse('notifications:complete', args=[other_reminder.pk]))
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class MindfulnessSessionListTests(ReminderApiTestCase):
+    def setUp(self):
+        super().setUp()
+        self.url = reverse('notifications:mindfulness-sessions')
+
+    def test_lists_seeded_sessions_ordered(self):
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        codes = [session['code'] for session in response.data]
+        self.assertEqual(codes, ['neck_shoulder_stretch', 'breathing_meditation', 'evening_wind_down'])
+
+    def test_steps_sum_to_total_seconds(self):
+        response = self.client.get(self.url)
+
+        for session in response.data:
+            self.assertEqual(sum(step['seconds'] for step in session['steps']), session['total_seconds'])
+
+    def test_excludes_inactive_sessions(self):
+        MindfulnessSession.objects.filter(code='evening_wind_down').update(is_active=False)
+
+        response = self.client.get(self.url)
+
+        codes = [session['code'] for session in response.data]
+        self.assertNotIn('evening_wind_down', codes)
+
+    def test_requires_authentication(self):
+        self.client.force_authenticate(None)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
 class TodayRemindersTests(ReminderApiTestCase):

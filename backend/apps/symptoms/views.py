@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 
 from django.utils import timezone
 from rest_framework import generics, status
@@ -6,9 +6,16 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .analysis import build_streak, build_weekly_stats, week_bounds
+from .analysis import (
+    MISSED_DAYS_LOOKBACK,
+    build_missed_days,
+    build_streak,
+    build_weekly_stats,
+    week_bounds,
+)
 from .models import DailyCheckIn, SymptomLog, SymptomType, WeeklyReport
 from .serializers import (
+    BackfillSerializer,
     DailyCheckInSerializer,
     SymptomLogSerializer,
     SymptomTypeSerializer,
@@ -149,6 +156,71 @@ class WeeklyReportView(APIView):
             )
 
         return Response({**WeeklyReportSerializer(report).data, 'summary_source': source})
+
+
+class MissedDaysView(APIView):
+    """챗봇이 "그날은 어떠셨어요?" 하고 먼저 물어볼 날들 (PRD 기능 1).
+
+    가까운 날부터 나간다. 챗봇이 2주 전 일을 먼저 묻는 건 어색하다.
+    """
+
+    def get(self, request):
+        raw_days = request.query_params.get('days')
+        if raw_days is None:
+            days = MISSED_DAYS_LOOKBACK
+        else:
+            try:
+                days = int(raw_days)
+            except ValueError:
+                raise ValidationError({'days': '숫자여야 합니다.'})
+            if not 1 <= days <= 30:
+                raise ValidationError({'days': '1에서 30 사이여야 합니다.'})
+
+        return Response(build_missed_days(request.user, days=days))
+
+
+class BackfillView(APIView):
+    """챗봇이 대화로 받아낸 지난 날 증상을 저장한다.
+
+    직접 누른 기록과 섞이면 리포트가 "사용자가 스스로 남긴 기록"을 셀 수 없으므로
+    `source` 를 서버가 정한다. 시각을 모르면 `time_estimated` 로 표시해 시간대
+    집계에서 빠지게 한다 — 채워 넣은 시각이 "주로 저녁 시간대"를 흔들면 안 된다.
+    """
+
+    # 시각을 모를 때 넣는 값. 시간대 집계에서는 빠지지만 어딘가에는 놓여야 한다.
+    UNKNOWN_HOUR = 12
+    SLOT_HOURS = {'dawn': 3, 'morning': 9, 'afternoon': 14, 'evening': 20}
+
+    def post(self, request):
+        serializer = BackfillSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        day = serializer.validated_data['date']
+        entries = serializer.validated_data['symptoms']
+
+        today = timezone.localdate()
+        source = SymptomLog.Source.CHAT if day == today else SymptomLog.Source.BACKFILL
+        tz = timezone.get_current_timezone()
+
+        logs = []
+        for entry in entries:
+            slot = entry.get('time_slot')
+            hour = self.SLOT_HOURS[slot] if slot else self.UNKNOWN_HOUR
+            logs.append(SymptomLog(
+                user=request.user,
+                symptom_type=entry['code'],
+                severity=entry['severity'],
+                occurred_at=timezone.make_aware(datetime.combine(day, time(hour)), tz),
+                memo=entry.get('memo', ''),
+                source=source,
+                time_estimated=slot is None,
+            ))
+        SymptomLog.objects.bulk_create(logs)
+
+        created = SymptomLog.objects.filter(pk__in=[log.pk for log in logs]).select_related('symptom_type')
+        return Response(
+            {'created': SymptomLogSerializer(created, many=True).data},
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class StreakView(APIView):
