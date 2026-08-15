@@ -145,6 +145,41 @@ export function sendAudioMessage(sessionId: number, audioBase64: string, mimeTyp
   });
 }
 
+export type MindfulnessStep = {
+  instruction: string;
+  seconds: number;
+  pose: string;
+};
+
+export type MindfulnessSession = {
+  id: number;
+  code: string;
+  title: string;
+  description: string;
+  total_seconds: number;
+  steps: MindfulnessStep[];
+};
+
+export function getMindfulnessSessions() {
+  return request<MindfulnessSession[]>('/api/reminders/mindfulness-sessions/');
+}
+
+export type TodayReminder = {
+  id: number;
+  type: 'medication' | 'mindfulness';
+  label: string;
+  time: string;
+  completed: boolean;
+};
+
+export function getTodayReminders() {
+  return request<TodayReminder[]>('/api/reminders/today/');
+}
+
+export function completeReminder(reminderId: number) {
+  return request<{ completed: boolean }>(`/api/reminders/${reminderId}/complete/`, { method: 'POST' });
+}
+
 export type FaceAnalysisResult = {
   id: number;
   image: string;
