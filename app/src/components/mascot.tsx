@@ -232,26 +232,33 @@ export function Mascot({ pose }: { pose: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pose]);
 
+  // react-native-svg의 transform은 RN View 스타일 배열이 아니라 순수 SVG transform
+  // 문자열로 준다 -- G에 origin prop을 얹는 방식 대신, rotate(angle,cx,cy)로 회전
+  // 기준점을 직접 지정하고 scale은 "기준점으로 이동 -> scale -> 되돌리기"로 직접
+  // 구성한다. (origin prop + 배열 transform 조합을 애니메이션 중에 썼더니 웹에서
+  // 런타임 크래시가 나는 걸 확인하고 이 방식으로 바꿨다.)
   const headProps = useAnimatedProps(() => ({
-    transform: [
-      { translateX: headX.value },
-      { translateY: headY.value + bob.value },
-      { rotate: `${headRotate.value}deg` },
-    ],
+    transform: `translate(${headX.value} ${headY.value + bob.value}) rotate(${headRotate.value} 100 80)`,
   }));
   const torsoProps = useAnimatedProps(() => ({
-    transform: [{ translateY: bob.value }, { rotate: `${torsoRotate.value}deg` }, { scaleY: torsoScaleY.value }],
+    transform:
+      `translate(0 ${bob.value}) rotate(${torsoRotate.value} 100 125) ` +
+      `translate(100 125) scale(1 ${torsoScaleY.value}) translate(-100 -125)`,
   }));
   const armLeftProps = useAnimatedProps(() => ({
-    transform: [{ translateY: bob.value + armLeftY.value }, { rotate: `${armLeftRotate.value}deg` }],
+    transform: `translate(0 ${bob.value + armLeftY.value}) rotate(${armLeftRotate.value} 50 88)`,
   }));
   const armRightProps = useAnimatedProps(() => ({
-    transform: [{ translateY: bob.value + armRightY.value }, { rotate: `${armRightRotate.value}deg` }],
+    transform: `translate(0 ${bob.value + armRightY.value}) rotate(${armRightRotate.value} 150 88)`,
   }));
-  const legLeftProps = useAnimatedProps(() => ({ transform: [{ rotate: `${legLeftRotate.value}deg` }] }));
-  const legRightProps = useAnimatedProps(() => ({ transform: [{ rotate: `${legRightRotate.value}deg` }] }));
-  const eyeLeftProps = useAnimatedProps(() => ({ transform: [{ scaleY: eyeScale.value }] }));
-  const eyeRightProps = useAnimatedProps(() => ({ transform: [{ scaleY: eyeScale.value }] }));
+  const legLeftProps = useAnimatedProps(() => ({ transform: `rotate(${legLeftRotate.value} 85 162)` }));
+  const legRightProps = useAnimatedProps(() => ({ transform: `rotate(${legRightRotate.value} 115 162)` }));
+  const eyeLeftProps = useAnimatedProps(() => ({
+    transform: `translate(92 48) scale(1 ${eyeScale.value}) translate(-92 -48)`,
+  }));
+  const eyeRightProps = useAnimatedProps(() => ({
+    transform: `translate(108 48) scale(1 ${eyeScale.value}) translate(-108 -48)`,
+  }));
   const blushLeftProps = useAnimatedProps(() => ({ opacity: blush.value }));
   const blushRightProps = useAnimatedProps(() => ({ opacity: blush.value }));
 
@@ -267,21 +274,21 @@ export function Mascot({ pose }: { pose: string }) {
 
         <Ellipse cx={STAGE_WIDTH / 2} cy={STAGE_HEIGHT - 14} rx={40} ry={7} fill="rgba(46, 42, 36, 0.08)" />
 
-        <AnimatedG animatedProps={armLeftProps} origin="50,88">
+        <AnimatedG animatedProps={armLeftProps}>
           <Rect x={42} y={88} width={16} height={68} rx={8} fill={Warm.primary} />
         </AnimatedG>
-        <AnimatedG animatedProps={armRightProps} origin="150,88">
+        <AnimatedG animatedProps={armRightProps}>
           <Rect x={142} y={88} width={16} height={68} rx={8} fill={Warm.primary} />
         </AnimatedG>
 
-        <AnimatedG animatedProps={legLeftProps} origin="85,162">
+        <AnimatedG animatedProps={legLeftProps}>
           <Rect x={76} y={162} width={18} height={56} rx={9} fill={Warm.secondaryStrong} />
         </AnimatedG>
-        <AnimatedG animatedProps={legRightProps} origin="115,162">
+        <AnimatedG animatedProps={legRightProps}>
           <Rect x={106} y={162} width={18} height={56} rx={9} fill={Warm.secondaryStrong} />
         </AnimatedG>
 
-        <AnimatedG animatedProps={torsoProps} origin="100,125">
+        <AnimatedG animatedProps={torsoProps}>
           <Rect
             x={65}
             y={80}
@@ -294,14 +301,14 @@ export function Mascot({ pose }: { pose: string }) {
           />
         </AnimatedG>
 
-        <AnimatedG animatedProps={headProps} origin="100,80">
+        <AnimatedG animatedProps={headProps}>
           <Circle cx={100} cy={50} r={30} fill={Warm.card} stroke={Warm.border} strokeWidth={1.5} />
           <AnimatedCircle animatedProps={blushLeftProps} cx={80} cy={56} r={6} fill={Warm.secondary} />
           <AnimatedCircle animatedProps={blushRightProps} cx={120} cy={56} r={6} fill={Warm.secondary} />
-          <AnimatedG animatedProps={eyeLeftProps} origin="92,48">
+          <AnimatedG animatedProps={eyeLeftProps}>
             <Circle cx={92} cy={48} r={3} fill={Warm.textDeep} />
           </AnimatedG>
-          <AnimatedG animatedProps={eyeRightProps} origin="108,48">
+          <AnimatedG animatedProps={eyeRightProps}>
             <Circle cx={108} cy={48} r={3} fill={Warm.textDeep} />
           </AnimatedG>
           <Path d="M90,60 Q100,67 110,60" stroke={Warm.textDeep} strokeWidth={2.5} strokeLinecap="round" fill="none" />
