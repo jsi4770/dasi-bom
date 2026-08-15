@@ -70,6 +70,69 @@ SEVERITY_BINS = (
     (40, 'mild'),
     (65, 'moderate'),
 )
+# ^ 건드리지 말 것. `benchmark_redness_severity_dataset.py` 가 이 함수를 두 가지
+# 다른 목적으로 같이 쓴다 -- (1) 이 모델의 예측 점수를 등급으로, (2) Kaggle 라벨
+# 점수(0/20/40/60/80/100, 실제 0-100 의미 스케일)를 정답 등급으로. REDNESS_MODEL_*
+# 도입 후 예측 분포가 평균 33.7/표준편차 5.2로 좁게 뭉치면서 이 경계로는 대부분
+# '경미'에 몰려 4단계 일치율이 35%->26%로 떨어졌다(확인됨, 아래 참고). 이 경계를
+# 예측 분포에 맞춰 좁히면(30/33/40 시도해봄) 라벨 쪽 매핑까지 같이 망가져서 정답
+# 자체가 틀어진다(라벨 20/40 이 전부 엉뚱한 등급으로 재분류됨) -- 실제로 겪은 버그.
+# 제대로 고치려면 "모델 점수 -> 등급" 과 "라벨 점수 -> 등급"을 별도 함수/상수로
+# 분리해야 한다. 지금은 안 건드리고 회귀 점수(redness_score)만 개선된 상태로 두고,
+# 4단계 배지 재보정은 다음 작업으로 남김(PRD 참고).
+
+# Overall redness_score: Ridge regression trained on the Kaggle
+# skin_type_classification_dataset train split (144 photos, after dedup/
+# no-face drops) via `manage.py train_redness_regression`, evaluated on its
+# valid split (50 photos, held out from fitting/lambda-selection alike).
+# Replaces "average the four region_scores" (which only ever used the a*
+# channel) with a linear model over a*/b*/L*/highlight-ratio for all four
+# regions -- on valid: Pearson r 0.251 (old, mean-of-region_scores) -> 0.386
+# (this model), RMSE 27.1 -> 25.3. Region-level `region_scores` below is
+# untouched (still a*-only) so the per-region breakdown stays simple to
+# read; only this aggregate switched.
+#
+# Kaggle labels images by skin type (dry/oily/normal), and that one-hot was
+# the single strongest predictor when included -- but there's no path today
+# for the app to know a real user's skin type at upload time (no onboarding
+# field persists it, see PRD "다음 작업"), so it's deliberately left out here.
+# A feature present at training time but unknown at inference time would
+# make this benchmark not reproduce in production. Retrain with
+# `--include-skin-type` once that field exists.
+#
+# SEVERITY_BINS above was fit against the old A_CHANNEL_LOW/HIGH-scaled
+# average, not this model's output distribution -- the cut points haven't
+# been re-validated against it yet.
+REDNESS_MODEL_FEATURES = [
+    'forehead_a', 'forehead_b', 'forehead_l', 'forehead_highlight',
+    'nose_a', 'nose_b', 'nose_l', 'nose_highlight',
+    'left_cheek_a', 'left_cheek_b', 'left_cheek_l', 'left_cheek_highlight',
+    'right_cheek_a', 'right_cheek_b', 'right_cheek_l', 'right_cheek_highlight',
+    'num_excluded', 'lighting_corrected',
+]
+REDNESS_MODEL_IMPUTE = [
+    2.6692, -1.4624, 71.6274, 0.2006,
+    5.4514, 1.2778, 64.251, 0.1011,
+    4.7797, -0.1329, 69.627, 0.167,
+    4.4167, -0.7292, 70.6919, 0.1987,
+    0.0833, 0.9861,
+]
+REDNESS_MODEL_MU = REDNESS_MODEL_IMPUTE  # train-mean-imputed columns, so mean == impute value
+REDNESS_MODEL_SIGMA = [
+    6.7779, 10.5118, 9.7186, 0.2581,
+    6.3888, 9.3752, 9.3342, 0.1439,
+    6.9863, 10.6889, 10.7034, 0.2512,
+    7.0647, 10.6355, 10.2589, 0.2925,
+    0.2764, 0.117,
+]
+REDNESS_MODEL_WEIGHTS = [
+    0.75404, -0.83313, -0.6665, 0.06523,
+    0.39226, -1.03218, 0.27598, -0.74714,
+    0.93893, -1.03356, -0.73052, -0.54,
+    1.48541, -0.78783, -1.39831, -0.43873,
+    0.68238, -0.36099,
+]
+REDNESS_MODEL_INTERCEPT = 33.8889
 
 _landmarker = None
 
@@ -184,6 +247,17 @@ def _redness_index(rgb_patch):
     return float(np.median(a_signed))
 
 
+def _extra_region_features(rgb_patch):
+    """b*/L* medians + specular-highlight ratio, for the regression experiment
+    in train_redness_regression.py -- the rule-based score only uses a*."""
+    lightness, _, b_signed = _lab_channels(rgb_patch)
+    return {
+        'b': round(float(np.median(b_signed)), 2),
+        'l': round(float(np.median(lightness)), 2),
+        'highlight_ratio': round(float(np.mean(lightness > 80)), 3),
+    }
+
+
 def _looks_like_skin(rgb_patch):
     lightness, _, _ = _lab_channels(rgb_patch)
     return float(np.median(lightness)) >= MIN_SKIN_LIGHTNESS
@@ -208,6 +282,27 @@ def _looks_like_skin_reference(rgb_patch):
 def _score_from_index(a_signed_mean):
     span = A_CHANNEL_HIGH - A_CHANNEL_LOW
     return float(np.clip((a_signed_mean - A_CHANNEL_LOW) / span * 100, 0, 100))
+
+
+def _ml_redness_score(region_raw_index, region_extra_features, excluded_regions, lighting_corrected):
+    """Overall redness_score from REDNESS_MODEL_WEIGHTS -- see the comment
+    above REDNESS_MODEL_FEATURES for what this is and why."""
+    values = {}
+    for region in ('forehead', 'nose', 'left_cheek', 'right_cheek'):
+        if region in region_raw_index:
+            extra = region_extra_features[region]
+            values[f'{region}_a'] = region_raw_index[region]
+            values[f'{region}_b'] = extra['b']
+            values[f'{region}_l'] = extra['l']
+            values[f'{region}_highlight'] = extra['highlight_ratio']
+    values['num_excluded'] = float(len(excluded_regions))
+    values['lighting_corrected'] = 1.0 if lighting_corrected else 0.0
+
+    total = REDNESS_MODEL_INTERCEPT
+    for i, name in enumerate(REDNESS_MODEL_FEATURES):
+        x = values.get(name, REDNESS_MODEL_IMPUTE[i])
+        total += ((x - REDNESS_MODEL_MU[i]) / REDNESS_MODEL_SIGMA[i]) * REDNESS_MODEL_WEIGHTS[i]
+    return float(np.clip(total, 0, 100))
 
 
 def _severity_from_score(score):
@@ -294,6 +389,7 @@ def analyze_face_redness(image_file):
 
     region_scores = {}
     region_raw_index = {}
+    region_extra_features = {}
     excluded_regions = []
     for name, (center, anchors) in fixed_regions.items():
         if not all(_fully_in_frame(a, width, height, roi_half) for a in anchors):
@@ -309,6 +405,7 @@ def analyze_face_redness(image_file):
         raw = _redness_index(patch)
         region_raw_index[name] = round(raw, 2)
         region_scores[name] = round(_score_from_index(raw), 1)
+        region_extra_features[name] = _extra_region_features(patch)
 
     # Cheeks: eye+mouth-corner midpoint when the eye is usable, else a
     # nose->mouth-corner fallback (see _cheek_center) so a tight crop that
@@ -329,17 +426,24 @@ def analyze_face_redness(image_file):
         raw = _redness_index(patch)
         region_raw_index[name] = round(raw, 2)
         region_scores[name] = round(_score_from_index(raw), 1)
+        region_extra_features[name] = _extra_region_features(patch)
 
     if not region_scores:
         raise NoFaceDetectedError('피부 영역을 추출하지 못했습니다. 다시 촬영해 주세요.')
 
-    overall_score = round(float(np.mean(list(region_scores.values()))), 1)
+    overall_score = round(
+        _ml_redness_score(region_raw_index, region_extra_features, excluded_regions, lighting_corrected), 1,
+    )
 
     return {
         'redness_score': overall_score,
         'severity': _severity_from_score(overall_score),
         'region_scores': region_scores,
         'region_raw_index': region_raw_index,
+        # b*/L*/highlight_ratio per region -- not used by the rule-based score,
+        # only by management/commands/train_redness_regression.py to build a
+        # richer feature vector than the single a* channel above.
+        'region_extra_features': region_extra_features,
         'lighting_corrected': lighting_corrected,
         'excluded_regions': excluded_regions,
     }
