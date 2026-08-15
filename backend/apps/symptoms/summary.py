@@ -19,7 +19,11 @@ logger = logging.getLogger(__name__)
 PROMPT_RULES = """[지켜야 할 것]
 - 위 집계에 없는 숫자나 사실은 절대 쓰지 마세요. 수치를 새로 만들면 안 됩니다.
 - 진단하거나 병명을 말하지 마세요. 의료 조언이 아니라 생활 제안입니다.
-- 3문장, 짧고 따뜻하게. 완경기에 접어든 50대 여성에게 말하듯이.
+- 얼굴 사진 점수가 있어도 증상 기록과 "일치한다"거나 "그래서 그렇다"고 쓰지 마세요.
+  둘은 아직 서로를 설명할 만큼 근거가 쌓이지 않았습니다. 각각 무엇이 기록됐는지만 말하세요.
+- 진료 상담 안내가 있으면 마지막에 한 문장 덧붙이세요. 겁주지 말고, 쌓인 기록을
+  가지고 편하게 이야기해보시라는 정도로. 없으면 덧붙이지 마세요.
+- 3~4문장, 짧고 따뜻하게. 완경기에 접어든 50대 여성에게 말하듯이.
 - "~습니다"가 아니라 "~어요/~네요"로 끝나는 부드러운 존댓말.
 - 날짜 숫자(2026-08-03 같은)는 쓰지 마세요. 화면에 이미 표시됩니다.
 - 첫 문장은 그 주에 가장 두드러진 패턴, 마지막 문장은 오늘 바로 해볼 수 있는 작은 제안 하나.
@@ -109,6 +113,23 @@ def _describe(stats):
     if averages['mood'] is not None:
         lines.append(f'- 기분 평균 {averages["mood"]}/5, 수면 평균 {averages["sleep_quality"]}/5')
 
+    skin = stats.get('skin_link')
+    if skin:
+        lines.append('')
+        lines.append(f'[얼굴 사진 분석 — {skin["photo_days"]}일 촬영]')
+        for day in skin['days']:
+            lines.append(
+                f'- {day["date"]}: 피부 홍조 점수 {day["redness_score"]}점, '
+                f'같은 날 홍조 기록 {day["hot_flash_logs"]}회'
+            )
+        lines.append('(이 둘이 서로를 설명한다고 말하지 마세요. 각각 기록된 값일 뿐입니다.)')
+
+    care = stats.get('care_signal')
+    if care and care['suggested']:
+        lines.append('')
+        lines.append('[진료 상담을 권할 근거]')
+        lines.extend(f'- {reason["label"]}' for reason in care['reasons'])
+
     return '\n'.join(lines)
 
 
@@ -145,9 +166,23 @@ def _from_template(stats):
             f'잘 주무신 날({link["symptoms_after_good_sleep"]}건)보다 잦았어요.'
         )
 
+    skin = stats.get('skin_link')
+    if skin:
+        sentences.append(
+            f'얼굴 사진은 {skin["photo_days"]}일 찍으셨고, 피부 홍조 점수는 평균 '
+            f'{skin["average_redness"]}점이었어요.'
+        )
+
     sentences.append(
-        f'{stats["days_recorded"]}일 기록하셨어요. 이렇게 쌓인 기록이 나중에 병원에서 이야기할 때 도움이 됩니다.'
+        f'{stats["days_recorded"]}일 기록하셨어요.'
         if stats['goal_met']
         else f'이번 주는 {stats["days_recorded"]}일 기록하셨어요. 조금씩이라도 이어가 보면 패턴이 더 잘 보입니다.'
     )
+
+    care = stats.get('care_signal')
+    if care and care['suggested']:
+        sentences.append(
+            f'{care["reasons"][0]["label"]}. 이렇게 쌓인 기록을 가지고 진료 때 편하게 '
+            '이야기해 보시면 도움이 될 거예요.'
+        )
     return ' '.join(sentences)
