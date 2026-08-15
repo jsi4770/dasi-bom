@@ -5,8 +5,21 @@ from rest_framework import generics, mixins, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Reminder, ReminderCompletion
-from .serializers import ReminderCompletionSerializer, ReminderSerializer, TodayReminderSerializer
+from .models import MindfulnessSession, Reminder, ReminderCompletion
+from .serializers import (
+    MindfulnessSessionSerializer,
+    ReminderCompletionSerializer,
+    ReminderSerializer,
+    TodayReminderSerializer,
+)
+
+
+class MindfulnessSessionListView(generics.ListAPIView):
+    """명상·스트레칭 콘텐츠 목록. 앱이 그대로 받아 단계별 타이머로 진행시킨다."""
+
+    serializer_class = MindfulnessSessionSerializer
+    pagination_class = None
+    queryset = MindfulnessSession.objects.filter(is_active=True)
 
 
 class ReminderListCreateView(generics.ListCreateAPIView):

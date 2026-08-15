@@ -1,6 +1,14 @@
 from django.contrib import admin
 
-from .models import Reminder, ReminderCompletion
+from .models import MindfulnessSession, Reminder, ReminderCompletion
+
+
+@admin.register(MindfulnessSession)
+class MindfulnessSessionAdmin(admin.ModelAdmin):
+    list_display = ['title', 'code', 'total_seconds', 'order', 'is_active']
+    list_display_links = ['title']
+    list_editable = ['order', 'is_active']
+    search_fields = ['title', 'code']
 
 
 @admin.register(Reminder)
