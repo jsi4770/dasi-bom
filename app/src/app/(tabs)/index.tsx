@@ -159,15 +159,6 @@ export default function HomeScreen() {
           </Pressable>
         </WarmCard>
       </View>
-
-      {/* 데모 모드 설정 / 로그인 안내 / 설정·데이터 관리는 화면이 아직 따로 없어 전부 같은
-          곳(/settings)으로 보내던 걸 하나로 합침 — 셋 다 동일 목적지라 나눠 둘 이유가 없었음 */}
-      <Pressable
-        onPress={() => router.push('/settings')}
-        accessibilityRole="button"
-        style={({ pressed }) => [styles.footerLink, pressed && styles.pressed]}>
-        <ThemedText style={styles.footerLinkText}>설정</ThemedText>
-      </Pressable>
     </WarmScreen>
   );
 }
@@ -339,17 +330,5 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: Warm.text,
-  },
-  footerLink: {
-    alignSelf: 'center',
-    minHeight: 44,
-    paddingHorizontal: 20,
-    justifyContent: 'center',
-  },
-  footerLinkText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Warm.text,
-    textDecorationLine: 'underline',
   },
 });

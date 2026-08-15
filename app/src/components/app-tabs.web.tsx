@@ -63,8 +63,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: Warm.border,
   },
   innerContainer: {
     paddingVertical: Spacing.two,
