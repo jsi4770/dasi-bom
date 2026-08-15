@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import MindfulnessSession, Reminder, ReminderCompletion
+from .models import MindfulnessSession, PushSubscription, Reminder, ReminderCompletion
 
 
 @admin.register(MindfulnessSession)
@@ -27,3 +27,15 @@ class ReminderCompletionAdmin(admin.ModelAdmin):
     search_fields = ['reminder__user__username', 'reminder__label']
     date_hierarchy = 'date'
     autocomplete_fields = ['reminder']
+
+
+@admin.register(PushSubscription)
+class PushSubscriptionAdmin(admin.ModelAdmin):
+    list_display = ['user', 'short_endpoint', 'created_at']
+    list_filter = ['created_at']
+    search_fields = ['user__username', 'endpoint']
+    date_hierarchy = 'created_at'
+
+    @admin.display(description='endpoint')
+    def short_endpoint(self, obj):
+        return obj.endpoint[:50]

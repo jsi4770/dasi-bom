@@ -33,6 +33,7 @@ urlpatterns = [
     path('api/chatbot/', include('apps.chatbot.urls')),
     path('api/face-analysis/', include('apps.face_analysis.urls')),
     path('api/reminders/', include('apps.notifications.urls')),
+    path('api/push/', include('apps.notifications.push_urls')),
 ]
 
 if settings.DEBUG:
