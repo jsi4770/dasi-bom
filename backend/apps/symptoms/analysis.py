@@ -100,10 +100,22 @@ def _symptom_breakdown(logs, prev_counts):
     rows = []
     for code, group in by_code.items():
         symptom = group[0].symptom_type
-        slots = Counter(slot_of(timezone.localtime(log.occurred_at).hour)[0] for log in group)
-        top_slot, top_n = slots.most_common(1)[0]
-        ratio = top_n / len(group)
         prev = prev_counts.get(code, 0)
+
+        # 챗봇이 소급 입력한 기록은 시각이 추정값이라 시간대 집계에서 뺀다.
+        # 넣으면 "주로 저녁 시간대" 가 채워 넣은 시각 때문에 흔들린다.
+        timed = [log for log in group if not log.time_estimated]
+        if not timed:
+            rows.append({
+                'code': code, 'label': symptom.label, 'emoji': symptom.emoji,
+                'count': len(group), 'prev_count': prev, 'delta': len(group) - prev,
+                'peak_slot': None, 'peak_slot_label': None, 'peak_ratio': None,
+            })
+            continue
+
+        slots = Counter(slot_of(timezone.localtime(log.occurred_at).hour)[0] for log in timed)
+        top_slot, top_n = slots.most_common(1)[0]
+        ratio = top_n / len(timed)
 
         rows.append({
             'code': code,
@@ -123,7 +135,10 @@ def _symptom_breakdown(logs, prev_counts):
 
 
 def _slot_totals(logs):
-    counts = Counter(slot_of(timezone.localtime(log.occurred_at).hour)[0] for log in logs)
+    counts = Counter(
+        slot_of(timezone.localtime(log.occurred_at).hour)[0]
+        for log in logs if not log.time_estimated
+    )
     return [
         {'code': code, 'label': label, 'count': counts.get(code, 0)}
         for code, label, *_ in TIME_SLOTS
@@ -261,6 +276,48 @@ def _missed_dates(week_start, week_end, check_ins):
             missed.append(day.isoformat())
         day += timedelta(days=1)
     return missed
+
+
+WEEKDAY_LABELS = ['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일']
+
+MISSED_DAYS_LOOKBACK = 14
+
+
+def build_missed_days(user, days=MISSED_DAYS_LOOKBACK, today=None):
+    """아무 기록도 없는 지난 날들. 챗봇이 "그날은 어떠셨어요?" 하고 물어볼 재료다.
+
+    체크인도 증상 기록도 없는 날만 센다. 둘 중 하나라도 있으면 그날은 이미 말한
+    셈이다. 오늘은 아직 저녁이 안 왔을 수 있으니 뺀다 — 하루가 끝나기도 전에
+    "오늘 기록이 없네요" 하고 묻는 건 채근이다.
+    """
+    today = today or timezone.localdate()
+    start = today - timedelta(days=days)
+    last_day = today - timedelta(days=1)
+
+    checked = set(
+        DailyCheckIn.objects
+        .filter(user=user, date__gte=start, date__lte=last_day)
+        .values_list('date', flat=True)
+    )
+    logged = {
+        timezone.localtime(moment).date()
+        for moment in SymptomLog.objects
+        .filter(user=user, occurred_at__date__gte=start, occurred_at__date__lte=last_day)
+        .values_list('occurred_at', flat=True)
+    }
+
+    missed, day = [], last_day
+    while day >= start:
+        if day not in checked and day not in logged:
+            missed.append({
+                'date': day.isoformat(),
+                'days_ago': (today - day).days,
+                'weekday': WEEKDAY_LABELS[day.weekday()],
+            })
+        day -= timedelta(days=1)
+
+    # 가까운 날부터. 챗봇이 2주 전 일을 먼저 묻는 건 어색하다.
+    return {'lookback_days': days, 'missed_days': missed}
 
 
 def build_streak(user, today=None):
