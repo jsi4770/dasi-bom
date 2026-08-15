@@ -1,0 +1,9 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "RAILPACK"
+  },
+  "deploy": {
+    "startCommand": "python manage.py migrate --noinput && python manage.py download_face_model && python manage.py collectstatic --noinput && python manage.py seed_symptoms && python manage.py seed_reminders && python manage.py seed_face_analysis && gunicorn config.wsgi --bind 0.0.0.0:$PORT"
+  }
+}
