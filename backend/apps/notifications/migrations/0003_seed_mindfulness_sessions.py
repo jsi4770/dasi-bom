@@ -66,6 +66,9 @@ def create_sessions(apps, schema_editor):
                 'order': session['order'],
                 'steps': session['steps'],
                 'total_seconds': total_seconds,
+                # delete_sessions(역방향)가 is_active=False로 꺼두므로, 마이그레이션을
+                # 되돌렸다 다시 적용하는 경로에서 그대로 꺼진 채 남지 않게 명시적으로 켠다.
+                'is_active': True,
             },
         )
 
