@@ -1,0 +1,16 @@
+{
+  "name": "다시 봄",
+  "short_name": "다시봄",
+  "description": "완경기 여성의 몸·마음·피부를 하나로 연결해주는 생활 습관 코치",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "lang": "ko",
+  "background_color": "#F3EFE6",
+  "theme_color": "#0F3D2C",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
