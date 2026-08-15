@@ -110,14 +110,22 @@ export default function ChatScreen() {
     }
 
     if (recorderState.isRecording) {
-      await recorder.stop();
-      const uri = recorder.uri;
-      if (!uri) {
-        return;
-      }
       setIsSending(true);
       setErrorText(null);
       try {
+        // 웹에서 recorder.stop()이 내부적으로 MediaRecorder의 dataavailable 이벤트를 기다리는데,
+        // 브라우저/타이밍에 따라 그 이벤트가 끝내 안 오는 경우가 있어 화면이 영원히 멈출 수 있다.
+        // 안전장치로 타임아웃을 걸어 그런 경우에도 에러로 빠져나오게 한다.
+        await Promise.race([
+          recorder.stop(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('recorder.stop() timed out')), 6000)
+          ),
+        ]);
+        const uri = recorder.uri;
+        if (!uri) {
+          throw new Error('recording produced no audio file');
+        }
         const base64 =
           Platform.OS === 'web' ? await blobUrlToBase64(uri) : await new File(uri).base64();
         appendMessages(await sendAudioMessage(sessionId, base64, RECORDING_MIME_TYPE));
@@ -227,7 +235,7 @@ export default function ChatScreen() {
               onChangeText={setInput}
               placeholder="메시지를 입력해주세요"
               placeholderTextColor={Warm.textTertiary}
-              style={styles.input}
+              style={[styles.input, (isSending || recorderState.isRecording) && styles.inputDisabled]}
               editable={!isSending && !recorderState.isRecording}
               onSubmitEditing={handleSendText}
               returnKeyType="send"
@@ -395,6 +403,9 @@ const styles = StyleSheet.create({
     backgroundColor: Warm.card,
     fontSize: 16,
     color: Warm.text,
+  },
+  inputDisabled: {
+    opacity: 0.4,
   },
   sendButton: {
     width: 56,

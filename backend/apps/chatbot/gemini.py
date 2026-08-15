@@ -4,16 +4,19 @@
 GeminiRateLimitError 를 잡아서 사용자에게 "잠시 후 다시 시도" 안내로 바꿔야 한다.
 """
 import io
+import logging
 import wave
 
 from django.conf import settings
 from google import genai
 from google.genai import errors, types
 
+logger = logging.getLogger(__name__)
+
 SYSTEM_INSTRUCTION = (
     '너는 "다시 봄" 앱의 생활 정보 길잡이 챗봇이야. 완경(폐경)에 접어든 50대 여성 사용자와 '
     '대화해. 처음에는 정서적 위안과 공감을 우선하고, 사용자가 편해지면 병원 과·영양제 등 '
-    '실용 정보로 자연스럽게 넓혀가. 짧고 따뜻한 존댓말로, 한 번에 2~4문장 정도로 답해.'
+    '실용 정보로 자연스럽게 넓혀가. 짧고 따뜻한 존댓말로, 한 번에 2~3문장 정도로 답해.'
 )
 
 # gemini-2.5-flash-preview-tts 가 돌려주는 raw PCM 오디오 스펙.
@@ -41,11 +44,15 @@ def _generate_content(**kwargs):
         return client.models.generate_content(**kwargs)
     except errors.ClientError as exc:
         if getattr(exc, 'code', None) == 429:
+            logger.warning('Gemini rate limited: %s', exc)
             raise GeminiRateLimitError('Gemini 무료 티어 요청 한도를 초과했습니다.') from exc
+        logger.error('Gemini call failed (model=%s): %s', kwargs.get('model'), exc)
         raise GeminiError(str(exc)) from exc
     except errors.APIError as exc:
+        logger.error('Gemini call failed (model=%s): %s', kwargs.get('model'), exc)
         raise GeminiError(str(exc)) from exc
     except Exception as exc:
+        logger.exception('Unexpected error calling Gemini (model=%s)', kwargs.get('model'))
         raise GeminiError(str(exc)) from exc
 
 
