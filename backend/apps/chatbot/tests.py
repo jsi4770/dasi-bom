@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -10,6 +11,10 @@ from .models import ChatMessage, ChatSession
 
 class ChatbotApiTestCase(APITestCase):
     def setUp(self):
+        self.user = get_user_model().objects.create_user(username='sojeong', password='pw')
+        self.other = get_user_model().objects.create_user(username='someone-else', password='pw')
+        self.client.force_authenticate(self.user)
+
         patcher = patch.object(gemini, 'generate_reply', return_value='안녕하세요, 오늘 기분은 어떠세요?')
         self.mock_generate_reply = patcher.start()
         self.addCleanup(patcher.stop)
@@ -21,8 +26,16 @@ class ChatbotApiTestCase(APITestCase):
 
 
 class ChatSessionTests(ChatbotApiTestCase):
-    def test_create_and_list_sessions_use_shared_demo_user(self):
+    def test_requires_authentication(self):
+        self.client.force_authenticate(None)
+
+        response = self.client.post(reverse('chatbot:session-list'))
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_create_and_list_sessions_are_scoped_to_the_logged_in_user(self):
         session_id = self._create_session()
+        ChatSession.objects.create(user=self.other)
 
         response = self.client.get(reverse('chatbot:session-list'))
 
@@ -76,13 +89,22 @@ class ChatMessageTests(ChatbotApiTestCase):
 
     def test_message_history_is_scoped_to_its_session(self):
         session_id = self._create_session()
-        other_session = ChatSession.objects.create(user=ChatSession.objects.first().user)
+        other_session = ChatSession.objects.create(user=self.user)
         ChatMessage.objects.create(session=other_session, role=ChatMessage.Role.USER, text='다른 세션 메시지')
 
         response = self.client.get(reverse('chatbot:message-list', args=[session_id]))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 0)
+
+    def test_cannot_send_message_to_another_users_session(self):
+        other_session = ChatSession.objects.create(user=self.other)
+
+        response = self.client.post(
+            reverse('chatbot:message-list', args=[other_session.id]), {'text': '안녕'}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
 
 class ChatMessageSpeechTests(ChatbotApiTestCase):
