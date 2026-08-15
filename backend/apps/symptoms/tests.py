@@ -7,6 +7,8 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from apps.face_analysis.models import FaceAnalysis
+
 from .analysis import build_streak, week_bounds
 from .models import DailyCheckIn, SymptomLog, SymptomType
 
@@ -282,6 +284,61 @@ class WeeklyReportTests(SymptomApiTestCase):
         self._check_in(self.monday + timedelta(days=1), sleep_quality=5)
 
         self.assertIsNone(self.client.get(self.url).data['stats']['sleep_link'])
+
+    def _face_analysis(self, day, redness, user=None):
+        analysis = FaceAnalysis.objects.create(
+            user=user or self.user,
+            image='face_analysis/test.jpg',
+            redness_score=redness,
+            severity=FaceAnalysis.Severity.MODERATE,
+        )
+        # created_at 은 auto_now_add 라 만든 뒤에 날짜를 옮긴다.
+        FaceAnalysis.objects.filter(pk=analysis.pk).update(
+            created_at=timezone.make_aware(datetime.combine(day, time(9, 0))),
+        )
+        return analysis
+
+    def test_shows_skin_scores_beside_the_same_days_records(self):
+        self._log(self.monday, 19)
+        self._log(self.monday, 20)
+        self._face_analysis(self.monday, 70.0)
+
+        skin = self.client.get(self.url).data['stats']['skin_link']
+
+        self.assertEqual(skin['photo_days'], 1)
+        self.assertEqual(skin['days'][0]['redness_score'], 70.0)
+        self.assertEqual(skin['days'][0]['hot_flash_logs'], 2)
+
+    def test_skin_section_is_absent_without_photos(self):
+        self._log(self.monday, 20)
+
+        self.assertIsNone(self.client.get(self.url).data['stats']['skin_link'])
+
+    def test_skin_scores_do_not_leak_between_users(self):
+        self._face_analysis(self.monday, 70.0, user=self.other)
+
+        self.assertIsNone(self.client.get(self.url).data['stats']['skin_link'])
+
+    def test_care_signal_stays_quiet_below_the_threshold(self):
+        for hour in (19, 20):
+            self._log(self.monday, hour)
+
+        care = self.client.get(self.url).data['stats']['care_signal']
+
+        self.assertFalse(care['suggested'])
+        self.assertEqual(care['reasons'], [])
+
+    def test_care_signal_names_what_crossed_the_line(self):
+        for i in range(10):
+            self._log(self.monday, 9 + i)
+        for offset in range(3):
+            self._check_in(self.monday + timedelta(days=offset), sleep_quality=1, mood=1)
+
+        care = self.client.get(self.url).data['stats']['care_signal']
+
+        self.assertTrue(care['suggested'])
+        codes = {r['code'] for r in care['reasons']}
+        self.assertEqual(codes, {'hot_flash_frequency', 'poor_sleep', 'low_mood'})
 
     def test_reuses_the_sentence_while_the_numbers_are_unchanged(self):
         self._log(self.monday, 20)
