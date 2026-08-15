@@ -21,7 +21,12 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "name": "다시 봄",
+      "shortName": "다시봄",
+      "display": "standalone",
+      "themeColor": "#0F3D2C",
+      "backgroundColor": "#F3EFE6"
     },
     "plugins": [
       "expo-router",
