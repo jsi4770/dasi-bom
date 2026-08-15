@@ -311,3 +311,137 @@ export function getMe() {
 export async function logout(): Promise<void> {
   await clearTokens();
 }
+
+// ---- 증상·주간 리포트 ----
+
+export type SymptomLogEntry = {
+  id: number;
+  symptom_type: number;
+  symptom_type_detail: { id: number; code: string; label: string; category: string; emoji: string; order: number };
+  severity: 1 | 2 | 3;
+  occurred_at: string;
+  memo: string;
+  source: 'manual' | 'chat' | 'backfill' | 'seed';
+  created_at: string;
+};
+
+export type SymptomBreakdownRow = {
+  code: string;
+  label: string;
+  emoji: string;
+  count: number;
+  prev_count: number;
+  delta: number;
+  peak_slot: string | null;
+  peak_slot_label: string | null;
+  peak_ratio: number | null;
+};
+
+export type TimeSlotTotal = {
+  code: string;
+  label: string;
+  count: number;
+};
+
+export type CheckInAverages = {
+  sleep_quality: number | null;
+  mood: number | null;
+  fatigue: number | null;
+  stress: number | null;
+  sleep_hours: number | null;
+};
+
+export type SleepLink = {
+  poor_sleep_days: number;
+  good_sleep_days: number;
+  symptoms_after_poor_sleep: number;
+  symptoms_after_good_sleep: number;
+  difference: number;
+} | null;
+
+export type SkinLinkDay = {
+  date: string;
+  redness_score: number;
+  severity: 'normal' | 'mild' | 'moderate' | 'severe';
+  hot_flash_logs: number;
+  symptom_logs: number;
+};
+
+/** 같은 날의 얼굴 홍조 점수와 증상 기록을 나란히 놓은 값 — 상관관계는 계산하지 않는다(백엔드 설계 의도).
+ * 이번 주 사진이 한 장도 없으면 null. */
+export type SkinLink = {
+  photo_days: number;
+  average_redness: number;
+  days: SkinLinkDay[];
+} | null;
+
+export type CareSignalReason = {
+  code: string;
+  label: string;
+  value: number;
+  threshold: number;
+};
+
+/** "진료 상담을 권할 근거" — 진단이 아니라 기준을 넘은 항목을 그대로 보여주는 안내. */
+export type CareSignal = {
+  suggested: boolean;
+  reasons: CareSignalReason[];
+};
+
+export type WeeklyReportStats = {
+  week_start: string;
+  week_end: string;
+  total_logs: number;
+  days_recorded: number;
+  goal_days: number;
+  goal_met: boolean;
+  symptoms: SymptomBreakdownRow[];
+  time_slots: TimeSlotTotal[];
+  check_in_averages: CheckInAverages;
+  sleep_link: SleepLink;
+  skin_link: SkinLink;
+  care_signal: CareSignal;
+  missed_dates: string[];
+};
+
+export type WeeklyReport = {
+  week_start: string;
+  stats: WeeklyReportStats;
+  summary_text: string;
+  generated_at: string;
+  summary_source: 'ai' | 'cached' | 'template';
+};
+
+export function getWeeklyReport(opts?: { week?: string; refresh?: boolean }) {
+  const params = new URLSearchParams();
+  if (opts?.week) params.set('week', opts.week);
+  if (opts?.refresh) params.set('refresh', '1');
+  const query = params.toString();
+  return request<WeeklyReport>(`/api/symptoms/reports/weekly/${query ? `?${query}` : ''}`);
+}
+
+/** 요일별 막대그래프용 원본 기록. pagination 없이 전체 목록이 그대로 온다(views.py 참고). */
+export function listSymptomLogs(range: { from: string; to: string }) {
+  const params = new URLSearchParams({ from: range.from, to: range.to });
+  return request<SymptomLogEntry[]>(`/api/symptoms/logs/?${params.toString()}`);
+}
+
+export type DailyCheckInEntry = {
+  id: number;
+  date: string;
+  sleep_quality: 1 | 2 | 3 | 4 | 5;
+  mood: 1 | 2 | 3 | 4 | 5;
+  fatigue: 1 | 2 | 3 | 4 | 5 | null;
+  stress: 1 | 2 | 3 | 4 | 5 | null;
+  // DecimalField 기본 직렬화라 숫자가 아니라 문자열로 온다(예: "7.2") — 소비할 때 Number()로 변환할 것.
+  sleep_hours: string | null;
+  memo: string;
+  created_at: string;
+  updated_at: string;
+};
+
+/** 통합 타임라인의 일별 수면 막대용 원본 체크인. pagination 없음(views.py 참고). */
+export function listCheckIns(range: { from: string; to: string }) {
+  const params = new URLSearchParams({ from: range.from, to: range.to });
+  return request<DailyCheckInEntry[]>(`/api/symptoms/checkins/?${params.toString()}`);
+}
