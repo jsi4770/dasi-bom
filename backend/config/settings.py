@@ -175,6 +175,15 @@ GEMINI_TTS_MODEL = os.environ.get('GEMINI_TTS_MODEL', 'gemini-2.5-flash-preview-
 GEMINI_TTS_VOICE = os.environ.get('GEMINI_TTS_VOICE', 'Kore')
 
 
+# Web Push (apps.notifications) — VAPID
+# 키는 `python manage.py generate_vapid_keys`로 1회 생성해서 여기 값을 채운다.
+
+VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', '')
+VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', '')
+# pywebpush가 vapid_claims의 sub 값으로 요구하는 형식 — mailto: 접두어가 없으면 발송 시 에러가 난다.
+VAPID_CLAIMS_EMAIL = os.environ.get('VAPID_CLAIMS_EMAIL', '')
+
+
 # Django REST Framework
 # https://www.django-rest-framework.org/api-guide/settings/
 
