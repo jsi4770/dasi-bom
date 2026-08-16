@@ -5,6 +5,7 @@ from .views import (
     ReminderCompleteView,
     ReminderDetailView,
     ReminderListCreateView,
+    ReminderSendNowView,
     TodayRemindersView,
 )
 
@@ -16,4 +17,5 @@ urlpatterns = [
     path('mindfulness-sessions/', MindfulnessSessionListView.as_view(), name='mindfulness-sessions'),
     path('<int:pk>/', ReminderDetailView.as_view(), name='detail'),
     path('<int:pk>/complete/', ReminderCompleteView.as_view(), name='complete'),
+    path('<int:pk>/send-now/', ReminderSendNowView.as_view(), name='reminder-send-now'),
 ]

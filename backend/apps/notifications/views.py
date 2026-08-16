@@ -15,6 +15,7 @@ from .serializers import (
     ReminderSerializer,
     TodayReminderSerializer,
 )
+from .services import send_reminder_push
 
 
 class MindfulnessSessionListView(generics.ListAPIView):
@@ -80,6 +81,48 @@ class ReminderCompleteView(APIView):
             {'completed': True, 'completion': ReminderCompletionSerializer(completion).data},
             status=status.HTTP_201_CREATED,
         )
+
+
+class ReminderSendNowView(APIView):
+    """시연용 즉시 발송 — 시간 조건 무시하고 해당 리마인더를 즉시 발송합니다.
+    복약(medication) 타입만 허용."""
+
+    def post(self, request, pk):
+        reminder = get_object_or_404(Reminder, pk=pk, user=request.user)
+
+        if reminder.type != Reminder.Type.MEDICATION:
+            return Response(
+                {'error': '즉시 발송은 복약 알림만 지원합니다'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        subscriptions = list(request.user.push_subscriptions.all())
+        if not subscriptions:
+            return Response(
+                {'error': '구독된 기기가 없습니다. 브라우저에서 알림을 허용해주세요.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        sent = failed = expired = 0
+        for subscription in subscriptions:
+            outcome = send_reminder_push(reminder, subscription)
+            if outcome is True:
+                sent += 1
+            elif outcome == 'expired':
+                expired += 1
+            else:
+                failed += 1
+
+        return Response({
+            'sent': sent,
+            'failed': failed,
+            'expired': expired,
+            'reminder': {
+                'id': reminder.id,
+                'label': reminder.label,
+                'type': reminder.type,
+            },
+        })
 
 
 class TodayRemindersView(generics.ListAPIView):
