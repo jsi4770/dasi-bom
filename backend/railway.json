@@ -4,7 +4,6 @@
     "builder": "RAILPACK"
   },
   "deploy": {
-    "aptPackages": ["libgl1", "libglib2.0-0", "libsm6", "libxcb1", "libxext6", "libxrender1"],
     "startCommand": "python manage.py migrate --noinput && python manage.py download_face_model && python manage.py collectstatic --noinput && python manage.py seed_symptoms && python manage.py seed_reminders && python manage.py seed_face_analysis && gunicorn config.wsgi --bind 0.0.0.0:$PORT"
   }
 }
