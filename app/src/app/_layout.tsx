@@ -69,6 +69,8 @@ function RootNavigator() {
         <Stack.Screen name="face-result" options={{ headerShown: false }} />
         <Stack.Screen name="symptom-log" options={{ headerShown: false }} />
         <Stack.Screen name="mindfulness-session" options={{ headerShown: false }} />
+        <Stack.Screen name="medication" options={{ headerShown: false }} />
+        <Stack.Screen name="medication-form" options={{ headerShown: false }} />
         <Stack.Screen name="onboarding/welcome" options={{ headerShown: false }} />
         <Stack.Screen name="onboarding/survey" options={{ headerShown: false }} />
         <Stack.Screen name="onboarding/survey-result" options={{ headerShown: false }} />
