@@ -64,6 +64,10 @@ export default function ChatScreen() {
   const [speakingMessageId, setSpeakingMessageId] = useState<number | null>(null);
   const [loadingSpeechId, setLoadingSpeechId] = useState<number | null>(null);
   const listRef = useRef<FlatList<ChatMessage>>(null);
+  // 챗봇 답변이 도착하는 즉시 TTS를 미리 받아서 캐싱해둔다 — "음성으로 듣기"를 누르면
+  // 그때 새로 만들지 않고 이미 준비된 걸 바로 재생해서 체감 대기시간을 없앤다.
+  // 재생은 여전히 사용자가 버튼을 눌러야만 시작된다(자동재생 아님).
+  const speechCacheRef = useRef<Map<number, string>>(new Map());
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
@@ -81,6 +85,20 @@ export default function ChatScreen() {
   function appendMessages(result: { user_message: ChatMessage; assistant_message: ChatMessage }) {
     setMessages((prev) => [...prev, result.user_message, result.assistant_message]);
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+    prefetchSpeech(result.assistant_message.id);
+  }
+
+  function prefetchSpeech(messageId: number) {
+    if (speechCacheRef.current.has(messageId)) {
+      return;
+    }
+    fetchMessageSpeechFile(messageId)
+      .then((uri) => {
+        speechCacheRef.current.set(messageId, uri);
+      })
+      .catch(() => {
+        // 미리 받기는 실패해도 조용히 넘어간다 — 사용자가 버튼을 누르면 그때 다시 시도된다.
+      });
   }
 
   function describeError(error: unknown, fallback: string) {
@@ -153,10 +171,21 @@ export default function ChatScreen() {
       player.pause();
       return;
     }
+
+    const cachedUri = speechCacheRef.current.get(message.id);
+    if (cachedUri) {
+      setErrorText(null);
+      player.replace(cachedUri);
+      player.play();
+      setSpeakingMessageId(message.id);
+      return;
+    }
+
     setLoadingSpeechId(message.id);
     setErrorText(null);
     try {
       const fileUri = await fetchMessageSpeechFile(message.id);
+      speechCacheRef.current.set(message.id, fileUri);
       player.replace(fileUri);
       player.play();
       setSpeakingMessageId(message.id);
