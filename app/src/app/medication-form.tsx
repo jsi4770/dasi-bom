@@ -12,7 +12,12 @@ import { SeverityColors, Warm } from '@/constants/theme';
 import { ApiError, createReminder, deleteReminder, TodayReminder, updateReminder } from '@/lib/api';
 import { buildTimeValue, formatTimeLabel, parseTimeParts } from '@/lib/reminder-format';
 
-const SUGGESTED_LABELS = ['호르몬 치료제', '칼슘', '비타민D', '오메가3', '유산균'];
+type ReminderKind = TodayReminder['type'];
+
+const SUGGESTED_LABELS: Record<ReminderKind, string[]> = {
+  medication: ['호르몬 치료제', '칼슘', '비타민D', '오메가3', '유산균'],
+  mindfulness: ['아침 스트레칭', '저녁 명상', '목·어깨 스트레칭', '호흡 정리'],
+};
 
 const TIME_PRESETS = [
   { label: '아침', hour: 8, minute: 0 },
@@ -24,9 +29,13 @@ const TIME_PRESETS = [
 const MINUTE_STEP = 10;
 
 export default function MedicationFormScreen() {
-  const { reminder: reminderParam } = useLocalSearchParams<{ reminder?: string }>();
+  const { reminder: reminderParam, type: typeParam } = useLocalSearchParams<{
+    reminder?: string;
+    type?: string;
+  }>();
   const reminder: TodayReminder | null = reminderParam ? JSON.parse(reminderParam) : null;
   const isEdit = reminder !== null;
+  const type: ReminderKind = reminder?.type ?? (typeParam === 'mindfulness' ? 'mindfulness' : 'medication');
 
   const initialTime = parseTimeParts(reminder?.time ?? '19:00:00');
 
@@ -52,7 +61,7 @@ export default function MedicationFormScreen() {
       if (isEdit) {
         await updateReminder(reminder.id, { label: trimmedLabel, time: timeValue, is_active: isActive });
       } else {
-        await createReminder({ type: 'medication', label: trimmedLabel, time: timeValue, is_active: isActive });
+        await createReminder({ type, label: trimmedLabel, time: timeValue, is_active: isActive });
       }
       router.back();
     } catch (error) {
@@ -101,7 +110,7 @@ export default function MedicationFormScreen() {
       />
 
       <View style={styles.chipRow}>
-        {SUGGESTED_LABELS.map((chip) => (
+        {SUGGESTED_LABELS[type].map((chip) => (
           <Pressable
             key={chip}
             onPress={() => setLabel(chip)}
