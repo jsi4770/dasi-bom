@@ -148,6 +148,78 @@ class ReminderCompleteTests(ReminderApiTestCase):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
 
+class ReminderSendNowTests(ReminderApiTestCase):
+    """시연용 즉시 발송 — get_due_reminders를 거치지 않는 별도 경로 검증."""
+
+    def setUp(self):
+        super().setUp()
+        self.reminder = Reminder.objects.create(
+            user=self.user, type=Reminder.Type.MEDICATION, label='칼슘·마그네슘', time='08:00:00',
+        )
+        self.subscription = PushSubscription.objects.create(
+            user=self.user, endpoint='https://fcm.googleapis.com/fcm/send/token-1',
+            p256dh='p256dh', auth='auth',
+        )
+        self.url = reverse('notifications:reminder-send-now', args=[self.reminder.pk])
+
+    @patch('apps.notifications.services.webpush')
+    def test_sends_to_own_medication_reminder_successfully(self, mock_webpush):
+        response = self.client.post(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['sent'], 1)
+        self.assertEqual(response.data['failed'], 0)
+        self.assertEqual(response.data['expired'], 0)
+        self.assertEqual(response.data['reminder'], {
+            'id': self.reminder.id, 'label': '칼슘·마그네슘', 'type': 'medication',
+        })
+
+    def test_rejects_mindfulness_type(self):
+        mindful = Reminder.objects.create(
+            user=self.user, type=Reminder.Type.MINDFULNESS, label='스트레칭', time='07:00:00',
+        )
+
+        response = self.client.post(reverse('notifications:reminder-send-now', args=[mindful.pk]))
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['error'], '즉시 발송은 복약 알림만 지원합니다')
+
+    def test_cannot_send_someone_elses_reminder(self):
+        other_reminder = Reminder.objects.create(
+            user=self.other, type=Reminder.Type.MEDICATION, label='영양제', time='08:00:00',
+        )
+
+        response = self.client.post(reverse('notifications:reminder-send-now', args=[other_reminder.pk]))
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_no_subscription_returns_clear_error(self):
+        self.subscription.delete()
+
+        response = self.client.post(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['error'], '구독된 기기가 없습니다. 브라우저에서 알림을 허용해주세요.')
+
+    def test_requires_authentication(self):
+        self.client.force_authenticate(None)
+
+        response = self.client.post(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    @patch('apps.notifications.services.webpush')
+    def test_expired_subscription_is_counted_and_removed(self, mock_webpush):
+        mock_webpush.side_effect = WebPushException('gone', response=MagicMock(status_code=410))
+
+        response = self.client.post(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['sent'], 0)
+        self.assertEqual(response.data['expired'], 1)
+        self.assertFalse(PushSubscription.objects.filter(pk=self.subscription.pk).exists())
+
+
 class MindfulnessSessionListTests(ReminderApiTestCase):
     def setUp(self):
         super().setUp()

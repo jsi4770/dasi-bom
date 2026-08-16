@@ -180,6 +180,50 @@ export function completeReminder(reminderId: number) {
   return request<{ completed: boolean }>(`/api/reminders/${reminderId}/complete/`, { method: 'POST' });
 }
 
+// ---- 리마인더 등록·수정·삭제 (backend/apps/notifications ReminderSerializer와 동일한 필드) ----
+
+export type Reminder = {
+  id: number;
+  type: 'medication' | 'mindfulness';
+  label: string;
+  time: string;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type ReminderPayload = {
+  type: 'medication' | 'mindfulness';
+  label: string;
+  time: string;
+  is_active?: boolean;
+};
+
+export function createReminder(payload: ReminderPayload) {
+  return request<Reminder>('/api/reminders/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateReminder(reminderId: number, payload: Partial<ReminderPayload>) {
+  return request<Reminder>(`/api/reminders/${reminderId}/`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+/** DRF의 DestroyModelMixin은 204 No Content(빈 바디)를 반환해 request()의 무조건적인
+ * response.json() 파싱이 실패한다 — authorizedFetch로 인증/401 refresh는 그대로 타되, 본문은
+ * 파싱하지 않는다. */
+export async function deleteReminder(reminderId: number): Promise<void> {
+  const response = await authorizedFetch(`/api/reminders/${reminderId}/`, { method: 'DELETE' });
+  if (!response.ok) {
+    throw await toApiError(response);
+  }
+}
+
 export type FaceAnalysisResult = {
   id: number;
   image: string;

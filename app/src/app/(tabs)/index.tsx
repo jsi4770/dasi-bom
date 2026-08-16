@@ -1,5 +1,6 @@
 import { SymbolView } from 'expo-symbols';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -8,6 +9,7 @@ import { WarmCard } from '@/components/warm/warm-card';
 import { WarmScreen } from '@/components/warm/warm-screen';
 import { MOCK_ROUTINE_STATUS, MOCK_WEEKLY_STATS } from '@/constants/mock-data';
 import { blobDecorationStyle, Warm } from '@/constants/theme';
+import { getTodayReminders, TodayReminder } from '@/lib/api';
 
 function ChevronRight({ color }: { color: string }) {
   return (
@@ -20,6 +22,24 @@ function ChevronRight({ color }: { color: string }) {
 }
 
 export default function HomeScreen() {
+  const [medicationReminders, setMedicationReminders] = useState<TodayReminder[] | null>(null);
+
+  // 홈은 탭 루트라 마운트된 채로 유지되므로, 복약 화면을 다녀온 뒤 카드 숫자가 그대로 남지 않도록
+  // 포커스될 때마다 다시 불러온다. 실패해도(비로그인 등) 카드는 "등록하기" 상태로 조용히 남는다.
+  useFocusEffect(
+    useCallback(() => {
+      getTodayReminders()
+        .then((all) => setMedicationReminders(all.filter((r) => r.type === 'medication')))
+        .catch(() => {});
+    }, [])
+  );
+
+  const medicationTotal = medicationReminders?.length ?? 0;
+  const medicationCompleted = medicationReminders?.filter((r) => r.completed).length ?? 0;
+  const medicationAllDone = medicationTotal > 0 && medicationCompleted === medicationTotal;
+  const medicationActionText =
+    medicationTotal === 0 ? '등록하기' : medicationAllDone ? '완료' : `${medicationCompleted}/${medicationTotal} 완료`;
+
   return (
     // 홈은 탭 루트라 뒤로가기가 필요 없어 헤더 없이 콘텐츠부터 시작한다 — 하단 탭바는 (tabs)/_layout.tsx가 담당.
     // 50대 사용자 대상 재설계: 화면당 카드 3개(이번 주 홍조 / 오늘의 루틴 / 다른 기능)로 묶어
@@ -76,12 +96,11 @@ export default function HomeScreen() {
         <ThemedText style={styles.sectionTitle}>오늘의 루틴</ThemedText>
         <WarmCard style={styles.noPad}>
           <Pressable
-            onPress={() => router.push('/care')}
+            onPress={() => router.push('/medication')}
             accessibilityRole="button"
             style={({ pressed }) => [styles.routineRow, pressed && styles.pressed]}>
-            <View
-              style={[styles.routineDot, MOCK_ROUTINE_STATUS.medicationDoneToday && styles.routineDotDone]}>
-              {MOCK_ROUTINE_STATUS.medicationDoneToday && (
+            <View style={[styles.routineDot, medicationAllDone && styles.routineDotDone]}>
+              {medicationAllDone && (
                 <SymbolView
                   name={{ ios: 'checkmark', android: 'check', web: 'check' }}
                   size={16}
@@ -90,12 +109,8 @@ export default function HomeScreen() {
               )}
             </View>
             <ThemedText style={styles.routineLabel}>복약·영양제</ThemedText>
-            <ThemedText
-              style={[
-                styles.routineAction,
-                !MOCK_ROUTINE_STATUS.medicationDoneToday && styles.routineActionEmphasis,
-              ]}>
-              {MOCK_ROUTINE_STATUS.medicationDoneToday ? '완료' : '기록하기'}
+            <ThemedText style={[styles.routineAction, !medicationAllDone && styles.routineActionEmphasis]}>
+              {medicationActionText}
             </ThemedText>
           </Pressable>
 
