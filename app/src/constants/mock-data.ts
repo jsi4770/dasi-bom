@@ -49,10 +49,9 @@ export const MOCK_WEEKLY_STATS = {
   trendNote: '지난주보다 홍조가 줄었어요. 잘 기록하고 있어요.',
 };
 
-// TODO: 백엔드 연동되면 GET /api/notifications/today/ 로 교체
+// 복약·영양제는 GET /api/reminders/today/ 실 데이터로 교체됨 — 명상 행만 아직 목업.
+// TODO: 명상도 백엔드 연동되면 이 목업을 지운다.
 export const MOCK_ROUTINE_STATUS = {
-  medicationDoneToday: true,
-  medicationSummary: '오늘 1회 완료',
   meditationDoneToday: false,
   meditationSummary: '오늘 아직 안 했어요',
 };
