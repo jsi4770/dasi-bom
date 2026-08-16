@@ -83,3 +83,25 @@ class ReminderCompletion(models.Model):
 
     def __str__(self):
         return f'{self.reminder} - {self.date}'
+
+
+class PushSubscription(models.Model):
+    """브라우저가 발급한 Web Push 구독 정보. 실제 발송 로직은 이후 단계에서 붙인다.
+
+    endpoint는 브라우저(기기)별로 전역 유니크 — 같은 endpoint로 다른 유저가 재구독하면
+    (공유 기기에서 계정을 바꾼 경우) 소유권이 새 유저로 넘어가는 게 맞는 동작이라
+    조회 키를 (user, endpoint) 조합이 아니라 endpoint 단독으로 둔다.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='push_subscriptions',
+    )
+    endpoint = models.URLField(unique=True, max_length=500)
+    p256dh = models.CharField(max_length=255)
+    auth = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f'{self.user} - {self.endpoint[:50]}'

@@ -1,13 +1,16 @@
+from django.conf import settings
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, mixins, status
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import MindfulnessSession, Reminder, ReminderCompletion
+from .models import MindfulnessSession, PushSubscription, Reminder, ReminderCompletion
 from .serializers import (
     MindfulnessSessionSerializer,
+    PushSubscriptionSerializer,
     ReminderCompletionSerializer,
     ReminderSerializer,
     TodayReminderSerializer,
@@ -98,3 +101,43 @@ class TodayRemindersView(generics.ListAPIView):
                 )
             )
         )
+
+
+class PushSubscribeView(APIView):
+    """Web Push 구독 등록/갱신. 같은 endpoint로 다시 호출하면 upsert된다."""
+
+    def post(self, request):
+        serializer = PushSubscriptionSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+
+        existed = PushSubscription.objects.filter(endpoint=serializer.validated_data['endpoint']).exists()
+        subscription = serializer.save()
+
+        return Response(
+            PushSubscriptionSerializer(subscription).data,
+            status=status.HTTP_200_OK if existed else status.HTTP_201_CREATED,
+        )
+
+
+class PushUnsubscribeView(APIView):
+    """Web Push 구독 해제. 본인 소유의 endpoint만 지울 수 있다."""
+
+    def delete(self, request):
+        subscription = get_object_or_404(
+            PushSubscription, endpoint=request.data.get('endpoint'), user=request.user
+        )
+        subscription.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class VapidPublicKeyView(APIView):
+    """VAPID public key 조회. 로그인 전에도 프론트가 구독 준비를 위해 이 값을 가져와야
+    하므로 의도적으로 인증 예외 처리함 — 이 앱에 있는 다른 AllowAny 없앴던 사례와
+    달리 여기는 필요한 경우임."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        if not settings.VAPID_PUBLIC_KEY:
+            return Response({'error': 'VAPID key not configured'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({'publicKey': settings.VAPID_PUBLIC_KEY})
