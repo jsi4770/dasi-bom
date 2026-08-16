@@ -71,13 +71,22 @@ export default function MindfulnessSessionScreen() {
     return (
       <WarmScreen scrollable={false} header={<WarmHeader title={session.title} variant="minimal" onBack={() => router.back()} />}>
         <View style={styles.doneCenter}>
-          <View style={styles.doneBadge}>
-            <ThemedText style={styles.doneBadgeText}>✓</ThemedText>
+          <Mascot pose="rest" />
+          <ThemedText style={styles.doneTitle}>완료했어요</ThemedText>
+          <ThemedText style={styles.doneText}>오늘도 자신을 위한 시간을 가졌네요.</ThemedText>
+          <View style={styles.statRow}>
+            <View style={styles.statCard}>
+              <ThemedText style={styles.statLabel}>완료한 활동</ThemedText>
+              <ThemedText style={styles.statValue}>{session.title}</ThemedText>
+            </View>
+            <View style={[styles.statCard, styles.statCardAccent]}>
+              <ThemedText style={[styles.statLabel, styles.statLabelAccent]}>걸린 시간</ThemedText>
+              <ThemedText style={styles.statValue}>{Math.round(session.total_seconds / 60)}분</ThemedText>
+            </View>
           </View>
-          <ThemedText style={styles.doneTitle}>수고하셨어요!</ThemedText>
-          <ThemedText style={styles.doneText}>{session.title}을(를) 마쳤어요</ThemedText>
         </View>
-        <WarmButton label="닫기" onPress={() => router.back()} />
+        <WarmButton label="홈으로" onPress={() => router.replace('/')} />
+        <WarmButton label="다음 루틴" variant="secondary" onPress={() => router.replace('/care')} />
       </WarmScreen>
     );
   }
@@ -197,19 +206,35 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 10,
   },
-  doneBadge: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Warm.primarySoft,
-    marginBottom: 6,
+  statRow: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 10,
+    marginTop: 8,
   },
-  doneBadgeText: {
-    fontSize: 30,
-    fontWeight: '800',
-    color: Warm.primaryStrong,
+  statCard: {
+    flex: 1,
+    gap: 6,
+    borderRadius: 20,
+    padding: 18,
+    backgroundColor: Warm.backgroundSubtle,
+  },
+  statCardAccent: {
+    backgroundColor: Warm.secondarySoft,
+  },
+  statLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Warm.textSecondary,
+  },
+  statLabelAccent: {
+    color: Warm.secondaryStrong,
+    fontWeight: '600',
+  },
+  statValue: {
+    fontSize: 19,
+    fontWeight: '700',
+    color: Warm.textDeep,
   },
   doneTitle: {
     fontSize: 22,
