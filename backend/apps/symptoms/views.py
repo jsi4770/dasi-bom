@@ -153,23 +153,34 @@ class WeeklyReportView(APIView):
                 stats = build_weekly_stats(user, week_start)
                 showing_other_week = True
 
-        report = WeeklyReport.objects.filter(user=user, week_start=week_start).first()
-
+        report, created = WeeklyReport.objects.get_or_create(
+            user=user, week_start=week_start, defaults={'stats': stats},
+        )
+        stats_changed = report.stats != stats
         forced = request.query_params.get('refresh') == '1'
-        reusable = report and report.summary_text and report.stats == stats and not forced
 
-        if reusable:
+        # AI 문장은 기본으로 만들지 않는다. 앱 리포트 화면이 stats 의 구조화된 필드로
+        # 문구를 조합하기로 해서 summary_text 를 쓰지 않는데, 그대로 두면 리포트를 열
+        # 때마다 아무도 읽지 않는 문장을 만드느라 2초씩 쓴다(저장된 값은 0.03초).
+        if request.query_params.get('summary') != '1':
+            source = 'off'
+        elif report.summary_text and not stats_changed and not forced:
             source = 'cached'
         else:
-            summary, source = build_summary(stats)
-            report, _ = WeeklyReport.objects.update_or_create(
-                user=user,
-                week_start=week_start,
-                defaults={'stats': stats, 'summary_text': summary},
-            )
+            report.summary_text, source = build_summary(stats)
+
+        if stats_changed or created:
+            report.stats = stats
+        report.save()
+
+        payload = WeeklyReportSerializer(report).data
+        if source == 'off':
+            # DB 에 예전 문장이 남아 있어도 내보내지 않는다. 지금 집계와 맞는다는 보장이
+            # 없어서, 나중에 누가 화면에 띄우면 틀린 내용을 보여주게 된다.
+            payload['summary_text'] = ''
 
         return Response({
-            **WeeklyReportSerializer(report).data,
+            **payload,
             'summary_source': source,
             # 이번 주가 비어서 다른 주를 대신 보여주는 중이면 앱이 그렇게 안내할 수 있게 알린다.
             'showing_other_week': showing_other_week,
