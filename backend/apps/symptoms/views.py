@@ -11,6 +11,7 @@ from .analysis import (
     build_missed_days,
     build_streak,
     build_weekly_stats,
+    latest_week_with_records,
     week_bounds,
 )
 from .models import DailyCheckIn, SymptomLog, SymptomType, WeeklyReport
@@ -140,6 +141,18 @@ class WeeklyReportView(APIView):
         week_start, _ = week_bounds(_parse_date(raw_week, 'week') if raw_week else timezone.localdate())
 
         stats = build_weekly_stats(user, week_start)
+
+        # 월요일 아침이면 이번 주는 아직 비어 있는 게 정상이다. 그때 빈 리포트를 띄우면
+        # 쌓아 온 기록이 통째로 사라진 것처럼 보이므로, 기록이 남아 있는 가장 최근 주로
+        # 대신 보여준다. 주를 직접 지정했으면 그 주를 그대로 보여준다.
+        showing_other_week = False
+        if not raw_week and not stats['total_logs'] and not stats['days_recorded']:
+            latest = latest_week_with_records(user)
+            if latest and latest != week_start:
+                week_start = latest
+                stats = build_weekly_stats(user, week_start)
+                showing_other_week = True
+
         report = WeeklyReport.objects.filter(user=user, week_start=week_start).first()
 
         forced = request.query_params.get('refresh') == '1'
@@ -155,7 +168,12 @@ class WeeklyReportView(APIView):
                 defaults={'stats': stats, 'summary_text': summary},
             )
 
-        return Response({**WeeklyReportSerializer(report).data, 'summary_source': source})
+        return Response({
+            **WeeklyReportSerializer(report).data,
+            'summary_source': source,
+            # 이번 주가 비어서 다른 주를 대신 보여주는 중이면 앱이 그렇게 안내할 수 있게 알린다.
+            'showing_other_week': showing_other_week,
+        })
 
 
 class MissedDaysView(APIView):

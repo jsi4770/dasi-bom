@@ -371,6 +371,42 @@ class WeeklyReportTests(SymptomApiTestCase):
         self.assertEqual(response.data['stats']['total_logs'], 0)
         self.assertTrue(response.data['summary_text'])
 
+    def test_falls_back_to_the_last_week_that_has_records(self):
+        """월요일 아침이면 이번 주는 비어 있는 게 정상 — 빈 리포트 대신 지난주를 보여준다."""
+        last_monday = self.monday - timedelta(days=7)
+        self._log(last_monday, 20)
+        self._check_in(last_monday)
+
+        response = self.client.get(self.url)
+
+        self.assertTrue(response.data['showing_other_week'])
+        self.assertEqual(response.data['week_start'], last_monday.isoformat())
+        self.assertEqual(response.data['stats']['total_logs'], 1)
+
+    def test_does_not_replace_a_week_the_caller_asked_for(self):
+        self._log(self.monday - timedelta(days=7), 20)
+
+        response = self.client.get(self.url, {'week': self.monday.isoformat()})
+
+        self.assertFalse(response.data['showing_other_week'])
+        self.assertEqual(response.data['week_start'], self.monday.isoformat())
+        self.assertEqual(response.data['stats']['total_logs'], 0)
+
+    def test_stays_on_this_week_once_it_has_records(self):
+        self._log(self.monday - timedelta(days=7), 20)
+        self._log(self.monday, 20)
+
+        response = self.client.get(self.url)
+
+        self.assertFalse(response.data['showing_other_week'])
+        self.assertEqual(response.data['week_start'], self.monday.isoformat())
+
+    def test_empty_history_still_returns_this_week(self):
+        response = self.client.get(self.url)
+
+        self.assertFalse(response.data['showing_other_week'])
+        self.assertEqual(response.data['week_start'], self.monday.isoformat())
+
     def test_rejects_malformed_week_param(self):
         response = self.client.get(self.url, {'week': '이번주'})
 
