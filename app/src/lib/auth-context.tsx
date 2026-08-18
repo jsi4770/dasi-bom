@@ -11,6 +11,7 @@ import {
   type SignupPayload,
 } from '@/lib/api';
 import { getTokens } from '@/lib/auth-storage';
+import { disablePushNotifications } from '@/lib/push';
 
 type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
 
@@ -82,6 +83,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // 로그아웃 후에도 이 브라우저가 방금 로그아웃한 계정의 리마인더 알림을 계속 받으면
+    // 공용/공유 기기에서 문제가 될 수 있어 이 기기의 구독만 해제한다(다른 기기 구독은
+    // 건드리지 않음 — disablePushNotifications 참고). access token이 지워지기 전에
+    // 먼저 호출해야 서버 unsubscribe 요청에 인증이 붙는다. 실패해도 로그아웃 자체는
+    // 막지 않는다 — 다음 로그인 때 재구독하거나, 만료된 구독은 서버가 알아서 정리한다.
+    await disablePushNotifications().catch(() => {});
     await logoutRequest();
     setUser(null);
     setStatus('unauthenticated');
