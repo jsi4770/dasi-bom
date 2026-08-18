@@ -101,6 +101,9 @@ python manage.py runserver
 | `PUT` | `/api/symptoms/checkins/today/` | 오늘 체크인 저장 (없으면 생성 `201`, 있으면 수정 `200`) |
 | `GET` | `/api/symptoms/checkins/` | 기간 조회 |
 | `GET` | `/api/symptoms/reports/weekly/` | 주간 패턴 리포트 (`?week=2026-08-03`, 없으면 이번 주 / `?refresh=1`로 문장 재생성) |
+
+**이번 주에 기록이 하나도 없으면 기록이 있는 가장 최근 주를 대신 보여줍니다.** 월요일 아침처럼 이번 주가 아직 비어 있을 때 빈 화면이 나가면 쌓아 온 기록이 통째로 사라진 것처럼 보이기 때문입니다. 그때 응답의 `showing_other_week`가 `true`이고 `week_start`가 실제로 보여주는 주입니다 — 앱에서 "지난주 리포트예요" 같은 안내를 붙이시면 됩니다. `?week=`로 직접 지정하면 그 주를 그대로 보여줍니다(비어 있어도).
+
 | `GET` | `/api/symptoms/streak/` | 기록 지속 현황 (연속 일수, 주별 달성) |
 | `GET` | `/api/symptoms/missed-days/` | 아무 기록도 없는 지난 날 (`?days=14`) — 챗봇이 물어볼 재료 |
 | `POST` | `/api/symptoms/logs/backfill/` | 챗봇이 대화로 받아낸 지난 날 증상 저장 |
@@ -137,10 +140,13 @@ curl -H "Authorization: Bearer <access>" http://localhost:8000/api/symptoms/repo
 
 **Gemini에 원본 기록을 통째로 넘기지 않습니다.** 수치를 지어내면 리포트 전체를 믿을 수 없게 되기 때문입니다. 프롬프트에도 "위 집계에 없는 숫자는 쓰지 말 것"을 명시했습니다.
 
-생성된 문장은 `WeeklyReport.summary_text`에 저장하고, **집계가 달라졌을 때만 새로 만듭니다.** 시연 중 같은 주를 여러 번 열어도 문장이 매번 바뀌면 곤란하고, 무료 티어 한도도 아껴야 해서입니다. 응답의 `summary_source`로 어떻게 나온 문장인지 알 수 있습니다.
+**기본값은 문장을 만들지 않습니다.** 앱 리포트 화면이 `stats`의 구조화된 필드로 문구를 조합하기로 해서 `summary_text`를 쓰지 않는데, 그대로 두면 리포트를 열 때마다 아무도 읽지 않는 문장을 만드느라 2초씩 씁니다(저장된 값은 0.03초). 필요하면 `?summary=1`로 켭니다.
+
+켰을 때는 생성된 문장을 `WeeklyReport.summary_text`에 저장하고, **집계가 달라졌을 때만 새로 만듭니다.** 시연 중 같은 주를 여러 번 열어도 문장이 매번 바뀌면 곤란하고, 무료 티어 한도도 아껴야 해서입니다. 응답의 `summary_source`로 어떻게 나온 문장인지 알 수 있습니다.
 
 | `summary_source` | 뜻 |
 | --- | --- |
+| `off` | 만들지 않음 (기본값) — `summary_text`는 빈 문자열 |
 | `ai` | Gemini가 새로 생성 |
 | `cached` | 저장된 문장 재사용 (집계 변화 없음) |
 | `template` | 키가 없거나 호출 실패 → 규칙 기반 문장으로 폴백 |

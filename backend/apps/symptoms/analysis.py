@@ -49,6 +49,32 @@ def week_bounds(day):
     return start, start + timedelta(days=6)
 
 
+def latest_week_with_records(user, today=None, max_weeks_back=8):
+    """기록이 남아 있는 가장 최근 주의 월요일. 하나도 없으면 None.
+
+    월요일 아침처럼 이번 주가 아직 비어 있을 때 빈 리포트 대신 보여줄 주를 찾는다.
+    """
+    today = today or timezone.localdate()
+    earliest = today - timedelta(weeks=max_weeks_back)
+
+    last_log = (
+        SymptomLog.objects
+        .filter(user=user, occurred_at__date__gte=earliest, occurred_at__date__lte=today)
+        .order_by('-occurred_at').first()
+    )
+    last_check_in = (
+        DailyCheckIn.objects
+        .filter(user=user, date__gte=earliest, date__lte=today)
+        .order_by('-date').first()
+    )
+
+    days = [d for d in (
+        timezone.localtime(last_log.occurred_at).date() if last_log else None,
+        last_check_in.date if last_check_in else None,
+    ) if d]
+    return week_bounds(max(days))[0] if days else None
+
+
 def slot_of(hour):
     for code, label, start, end in TIME_SLOTS:
         if start <= hour < end:
