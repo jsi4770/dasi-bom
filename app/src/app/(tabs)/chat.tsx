@@ -66,8 +66,9 @@ export default function ChatScreen() {
   const listRef = useRef<FlatList<ChatMessage>>(null);
   // 챗봇 답변이 도착하는 즉시 TTS를 미리 받아서 캐싱해둔다 — "음성으로 듣기"를 누르면
   // 그때 새로 만들지 않고 이미 준비된 걸 바로 재생해서 체감 대기시간을 없앤다.
-  // 재생은 여전히 사용자가 버튼을 눌러야만 시작된다(자동재생 아님).
-  const speechCacheRef = useRef<Map<number, string>>(new Map());
+  // 재생은 여전히 사용자가 버튼을 눌러야만 시작된다(자동재생 아님). 진행 중인 요청까지 Promise로
+  // 캐싱해서, 미리 받기가 끝나기 전에 버튼을 눌러도 같은 요청을 공유하고 중복 호출하지 않는다.
+  const speechCacheRef = useRef<Map<number, Promise<string>>>(new Map());
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
@@ -88,17 +89,25 @@ export default function ChatScreen() {
     prefetchSpeech(result.assistant_message.id);
   }
 
-  function prefetchSpeech(messageId: number) {
-    if (speechCacheRef.current.has(messageId)) {
-      return;
-    }
-    fetchMessageSpeechFile(messageId)
-      .then((uri) => {
-        speechCacheRef.current.set(messageId, uri);
-      })
-      .catch(() => {
-        // 미리 받기는 실패해도 조용히 넘어간다 — 사용자가 버튼을 누르면 그때 다시 시도된다.
+  /** 메시지의 TTS 파일을 가져온다. 이미 요청이 진행 중이거나 끝난 게 있으면 그걸 그대로
+   * 공유해서, 미리 받기와 버튼 클릭이 겹쳐도 같은 메시지에 대해 Gemini를 두 번 호출하지 않는다.
+   * 실패하면 캐시에서 지워서 다음 시도가 새로 요청하게 한다. */
+  function getSpeechFile(messageId: number): Promise<string> {
+    let promise = speechCacheRef.current.get(messageId);
+    if (!promise) {
+      promise = fetchMessageSpeechFile(messageId);
+      speechCacheRef.current.set(messageId, promise);
+      promise.catch(() => {
+        speechCacheRef.current.delete(messageId);
       });
+    }
+    return promise;
+  }
+
+  function prefetchSpeech(messageId: number) {
+    getSpeechFile(messageId).catch(() => {
+      // 미리 받기 실패는 조용히 넘어간다 — 사용자가 버튼을 누르면 그때 다시 시도된다.
+    });
   }
 
   function describeError(error: unknown, fallback: string) {
@@ -172,20 +181,10 @@ export default function ChatScreen() {
       return;
     }
 
-    const cachedUri = speechCacheRef.current.get(message.id);
-    if (cachedUri) {
-      setErrorText(null);
-      player.replace(cachedUri);
-      player.play();
-      setSpeakingMessageId(message.id);
-      return;
-    }
-
     setLoadingSpeechId(message.id);
     setErrorText(null);
     try {
-      const fileUri = await fetchMessageSpeechFile(message.id);
-      speechCacheRef.current.set(message.id, fileUri);
+      const fileUri = await getSpeechFile(message.id);
       player.replace(fileUri);
       player.play();
       setSpeakingMessageId(message.id);
