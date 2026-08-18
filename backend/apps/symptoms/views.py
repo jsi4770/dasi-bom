@@ -11,6 +11,7 @@ from .analysis import (
     build_missed_days,
     build_streak,
     build_weekly_stats,
+    latest_week_with_records,
     week_bounds,
 )
 from .models import DailyCheckIn, SymptomLog, SymptomType, WeeklyReport
@@ -140,22 +141,50 @@ class WeeklyReportView(APIView):
         week_start, _ = week_bounds(_parse_date(raw_week, 'week') if raw_week else timezone.localdate())
 
         stats = build_weekly_stats(user, week_start)
-        report = WeeklyReport.objects.filter(user=user, week_start=week_start).first()
 
+        # 월요일 아침이면 이번 주는 아직 비어 있는 게 정상이다. 그때 빈 리포트를 띄우면
+        # 쌓아 온 기록이 통째로 사라진 것처럼 보이므로, 기록이 남아 있는 가장 최근 주로
+        # 대신 보여준다. 주를 직접 지정했으면 그 주를 그대로 보여준다.
+        showing_other_week = False
+        if not raw_week and not stats['total_logs'] and not stats['days_recorded']:
+            latest = latest_week_with_records(user)
+            if latest and latest != week_start:
+                week_start = latest
+                stats = build_weekly_stats(user, week_start)
+                showing_other_week = True
+
+        report, created = WeeklyReport.objects.get_or_create(
+            user=user, week_start=week_start, defaults={'stats': stats},
+        )
+        stats_changed = report.stats != stats
         forced = request.query_params.get('refresh') == '1'
-        reusable = report and report.summary_text and report.stats == stats and not forced
 
-        if reusable:
+        # AI 문장은 기본으로 만들지 않는다. 앱 리포트 화면이 stats 의 구조화된 필드로
+        # 문구를 조합하기로 해서 summary_text 를 쓰지 않는데, 그대로 두면 리포트를 열
+        # 때마다 아무도 읽지 않는 문장을 만드느라 2초씩 쓴다(저장된 값은 0.03초).
+        if request.query_params.get('summary') != '1':
+            source = 'off'
+        elif report.summary_text and not stats_changed and not forced:
             source = 'cached'
         else:
-            summary, source = build_summary(stats)
-            report, _ = WeeklyReport.objects.update_or_create(
-                user=user,
-                week_start=week_start,
-                defaults={'stats': stats, 'summary_text': summary},
-            )
+            report.summary_text, source = build_summary(stats)
 
-        return Response({**WeeklyReportSerializer(report).data, 'summary_source': source})
+        if stats_changed or created:
+            report.stats = stats
+        report.save()
+
+        payload = WeeklyReportSerializer(report).data
+        if source == 'off':
+            # DB 에 예전 문장이 남아 있어도 내보내지 않는다. 지금 집계와 맞는다는 보장이
+            # 없어서, 나중에 누가 화면에 띄우면 틀린 내용을 보여주게 된다.
+            payload['summary_text'] = ''
+
+        return Response({
+            **payload,
+            'summary_source': source,
+            # 이번 주가 비어서 다른 주를 대신 보여주는 중이면 앱이 그렇게 안내할 수 있게 알린다.
+            'showing_other_week': showing_other_week,
+        })
 
 
 class MissedDaysView(APIView):

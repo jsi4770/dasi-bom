@@ -340,11 +340,30 @@ class WeeklyReportTests(SymptomApiTestCase):
         codes = {r['code'] for r in care['reasons']}
         self.assertEqual(codes, {'hot_flash_frequency', 'poor_sleep', 'low_mood'})
 
+    def test_ai_sentence_is_not_generated_unless_asked_for(self):
+        """앱이 stats 로 문구를 조합하므로 기본값은 생성하지 않는다 — 2초를 아낀다."""
+        self._log(self.monday, 20)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.data['summary_source'], 'off')
+        self.assertEqual(response.data['summary_text'], '')
+
+    def test_a_previously_stored_sentence_is_not_served_when_generation_is_off(self):
+        """옛 문장이 지금 집계와 맞는다는 보장이 없다 — 내보내면 틀린 걸 보여주게 된다."""
+        self._log(self.monday, 20)
+        self.client.get(self.url, {'summary': '1'})
+        self._log(self.monday, 21)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.data['summary_text'], '')
+
     def test_reuses_the_sentence_while_the_numbers_are_unchanged(self):
         self._log(self.monday, 20)
 
-        first = self.client.get(self.url).data
-        second = self.client.get(self.url).data
+        first = self.client.get(self.url, {'summary': '1'}).data
+        second = self.client.get(self.url, {'summary': '1'}).data
 
         self.assertEqual(first['summary_source'], 'template')
         self.assertEqual(second['summary_source'], 'cached')
@@ -352,24 +371,62 @@ class WeeklyReportTests(SymptomApiTestCase):
 
     def test_regenerates_when_a_new_record_arrives(self):
         self._log(self.monday, 20)
-        self.client.get(self.url)
+        self.client.get(self.url, {'summary': '1'})
 
         self._log(self.monday, 21)
 
-        self.assertEqual(self.client.get(self.url).data['summary_source'], 'template')
+        self.assertEqual(self.client.get(self.url, {'summary': '1'}).data['summary_source'], 'template')
 
     def test_refresh_forces_regeneration(self):
         self._log(self.monday, 20)
-        self.client.get(self.url)
+        self.client.get(self.url, {'summary': '1'})
 
-        self.assertEqual(self.client.get(self.url, {'refresh': '1'}).data['summary_source'], 'template')
+        self.assertEqual(
+            self.client.get(self.url, {'summary': '1', 'refresh': '1'}).data['summary_source'], 'template',
+        )
 
     def test_empty_week_still_returns_a_report(self):
-        response = self.client.get(self.url)
+        response = self.client.get(self.url, {'summary': '1'})
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['stats']['total_logs'], 0)
         self.assertTrue(response.data['summary_text'])
+
+    def test_falls_back_to_the_last_week_that_has_records(self):
+        """월요일 아침이면 이번 주는 비어 있는 게 정상 — 빈 리포트 대신 지난주를 보여준다."""
+        last_monday = self.monday - timedelta(days=7)
+        self._log(last_monday, 20)
+        self._check_in(last_monday)
+
+        response = self.client.get(self.url)
+
+        self.assertTrue(response.data['showing_other_week'])
+        self.assertEqual(response.data['week_start'], last_monday.isoformat())
+        self.assertEqual(response.data['stats']['total_logs'], 1)
+
+    def test_does_not_replace_a_week_the_caller_asked_for(self):
+        self._log(self.monday - timedelta(days=7), 20)
+
+        response = self.client.get(self.url, {'week': self.monday.isoformat()})
+
+        self.assertFalse(response.data['showing_other_week'])
+        self.assertEqual(response.data['week_start'], self.monday.isoformat())
+        self.assertEqual(response.data['stats']['total_logs'], 0)
+
+    def test_stays_on_this_week_once_it_has_records(self):
+        self._log(self.monday - timedelta(days=7), 20)
+        self._log(self.monday, 20)
+
+        response = self.client.get(self.url)
+
+        self.assertFalse(response.data['showing_other_week'])
+        self.assertEqual(response.data['week_start'], self.monday.isoformat())
+
+    def test_empty_history_still_returns_this_week(self):
+        response = self.client.get(self.url)
+
+        self.assertFalse(response.data['showing_other_week'])
+        self.assertEqual(response.data['week_start'], self.monday.isoformat())
 
     def test_rejects_malformed_week_param(self):
         response = self.client.get(self.url, {'week': '이번주'})
