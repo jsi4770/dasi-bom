@@ -40,6 +40,29 @@ class DailyCheckInSerializer(serializers.ModelSerializer):
             'sleep_hours', 'memo', 'created_at', 'updated_at',
         ]
         read_only_fields = ['date', 'created_at', 'updated_at']
+        # 모델은 nullable 이지만(부분 저장을 위해), 저녁 체크인(PUT)에서는 여전히 필수다 —
+        # required=False 로 풀면 DRF 가 만드는 필드 타입까지 바뀌는 IntegerField 재선언과
+        # 달리, extra_kwargs 는 choices 검증(ChoiceField)은 그대로 두고 required 만 바꾼다.
+        extra_kwargs = {
+            'sleep_quality': {'required': True},
+            'mood': {'required': True},
+        }
+
+
+class DailyCheckInPatchSerializer(serializers.ModelSerializer):
+    """수면 등 일부 필드만 부분 저장할 때 쓴다(PATCH 전용).
+
+    모델 필드가 전부 nullable 이라 extra_kwargs 없이도 전부 optional 로 생성된다 —
+    DailyCheckInSerializer(PUT 전용)의 required=True 오버라이드는 이 클래스에 없다.
+    """
+
+    class Meta:
+        model = DailyCheckIn
+        fields = [
+            'id', 'date', 'sleep_quality', 'mood', 'fatigue', 'stress',
+            'sleep_hours', 'memo', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['date', 'created_at', 'updated_at']
 
 
 class BackfillEntrySerializer(serializers.Serializer):
