@@ -1,7 +1,7 @@
 import { SymbolView } from 'expo-symbols';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { WarmBottomSheet } from '@/components/warm/warm-bottom-sheet';
@@ -16,11 +16,30 @@ import {
   CHECKIN_SCALE_MIN,
   DEFAULT_CHECKIN_SCALE,
   SEVERITY_CYCLE,
-  SYMPTOM_TYPES,
   type Severity,
-  type TodaySymptomLog,
 } from '@/constants/mock-data';
 import { blobDecorationStyle, checkInScaleColor, SeverityColors, Warm } from '@/constants/theme';
+import {
+  ApiError,
+  createSymptomLog,
+  deleteSymptomLog,
+  getTodayCheckIn,
+  listSymptomLogs,
+  listSymptomTypes,
+  saveTodayCheckIn,
+  type SymptomLogEntry,
+  type SymptomTypeSummary,
+} from '@/lib/api';
+
+// report.tsx/care.tsx와 동일한 KST 날짜 계산 — occurred_at은 UTC ISO 문자열이라 자정 근처 기록의
+// "오늘" 판정이 문자열 슬라이싱으로는 어긋난다.
+const KST_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' });
+function kstToday() {
+  return KST_DATE_FORMATTER.format(new Date());
+}
+
+const SEVERITY_TO_API: Record<Severity, 1 | 2 | 3> = { mild: 1, moderate: 2, severe: 3 };
+const API_TO_SEVERITY: Record<1 | 2 | 3, Severity> = { 1: 'mild', 2: 'moderate', 3: 'severe' };
 
 function nextSeverity(current: Severity | undefined): Severity | undefined {
   if (!current) return SEVERITY_CYCLE[0];
@@ -29,34 +48,168 @@ function nextSeverity(current: Severity | undefined): Severity | undefined {
   return SEVERITY_CYCLE[index + 1];
 }
 
+// 같은 증상에 오늘 기록이 여러 건이면(예: 챗봇 소급 기록과 겹침) 가장 최근 것만 버튼에 반영한다 —
+// 목록은 백엔드가 -occurred_at 순으로 내려주므로 코드별로 처음 만나는 항목이 최신이다.
+function latestLogByCode(logs: SymptomLogEntry[]): Record<string, SymptomLogEntry> {
+  const map: Record<string, SymptomLogEntry> = {};
+  for (const log of logs) {
+    const code = log.symptom_type_detail.code;
+    if (!(code in map)) {
+      map[code] = log;
+    }
+  }
+  return map;
+}
+
 export default function SymptomLogScreen() {
-  // TODO: 백엔드 연동되면 오늘 로그는 GET/POST /api/symptoms/logs/ 로 교체
-  const [loggedSymptoms, setLoggedSymptoms] = useState<TodaySymptomLog>({});
-  // TODO: GET/PUT /api/symptoms/checkins/today/ 로 교체
+  const [status, setStatus] = useState<'loading' | 'error' | 'loaded'>('loading');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [symptomTypes, setSymptomTypes] = useState<SymptomTypeSummary[]>([]);
+  const [loggedSymptoms, setLoggedSymptoms] = useState<Record<string, SymptomLogEntry>>({});
+  const [pendingCodes, setPendingCodes] = useState<Set<string>>(new Set());
+  const [symptomError, setSymptomError] = useState<string | null>(null);
+
   const [checkInDone, setCheckInDone] = useState(false);
   const [sleepQuality, setSleepQuality] = useState(DEFAULT_CHECKIN_SCALE);
   const [mood, setMood] = useState(DEFAULT_CHECKIN_SCALE);
   const [sheetVisible, setSheetVisible] = useState(false);
+  const [savingCheckIn, setSavingCheckIn] = useState(false);
+  const [checkInError, setCheckInError] = useState<string | null>(null);
 
-  const loggedCount = Object.keys(loggedSymptoms).length;
+  // report.tsx의 .then/.catch 패턴과 동일 — async/await로 쓰면 eslint(react-hooks/set-state-in-effect)가
+  // await 이후의 setState도 effect 본문 동기 호출로 오인해 flag한다.
+  const load = useCallback(() => {
+    const today = kstToday();
+    Promise.all([listSymptomTypes(), listSymptomLogs({ from: today, to: today }), getTodayCheckIn()])
+      .then(([types, logs, todayCheckIn]) => {
+        setSymptomTypes(types);
+        setLoggedSymptoms(latestLogByCode(logs));
+        setCheckInDone(todayCheckIn.completed);
+        if (todayCheckIn.check_in) {
+          setSleepQuality(todayCheckIn.check_in.sleep_quality);
+          setMood(todayCheckIn.check_in.mood);
+        }
+        setStatus('loaded');
+      })
+      .catch((error) => {
+        setErrorMessage(
+          error instanceof ApiError ? error.message : '기록을 불러오지 못했어요. 다시 시도해주세요.'
+        );
+        setStatus('error');
+      });
+  }, []);
 
-  function cycleSymptom(code: string) {
-    setLoggedSymptoms((prev) => {
-      const next = { ...prev };
-      const severity = nextSeverity(prev[code]);
-      if (severity) {
-        next[code] = severity;
-      } else {
-        delete next[code];
-      }
-      return next;
-    });
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  function handleRetry() {
+    setStatus('loading');
+    load();
+  }
+
+  // 백엔드에 증상 기록 수정(PATCH)이 없어 심각도를 바꿀 때도 삭제 후 재생성한다. 생성보다 삭제를
+  // 먼저 해야 생성이 실패해도 같은 증상이 두 건 남아 주간 집계가 이중으로 잡히는 일이 없다.
+  // 실패하면 수동으로 되돌리는 대신 오늘 기록을 서버에서 다시 불러와 진짜 상태로 맞춘다.
+  function cycleSymptom(typeDef: SymptomTypeSummary) {
+    const code = typeDef.code;
+    if (pendingCodes.has(code)) return;
+
+    const current = loggedSymptoms[code];
+    const currentSeverity = current ? API_TO_SEVERITY[current.severity] : undefined;
+    const nextUi = nextSeverity(currentSeverity);
+
+    setSymptomError(null);
+    setPendingCodes((prev) => new Set(prev).add(code));
+
+    let action: Promise<SymptomLogEntry | null>;
+    if (!nextUi) {
+      action = deleteSymptomLog(current!.id).then(() => null);
+    } else if (current) {
+      action = deleteSymptomLog(current.id).then(() =>
+        createSymptomLog({ symptom_type: typeDef.id, severity: SEVERITY_TO_API[nextUi] })
+      );
+    } else {
+      action = createSymptomLog({ symptom_type: typeDef.id, severity: SEVERITY_TO_API[nextUi] });
+    }
+
+    action
+      .then((entry) => {
+        setLoggedSymptoms((prev) => {
+          const next = { ...prev };
+          if (entry) {
+            next[code] = entry;
+          } else {
+            delete next[code];
+          }
+          return next;
+        });
+      })
+      .catch((error) => {
+        setSymptomError(
+          error instanceof ApiError ? error.message : '기록을 저장하지 못했어요. 다시 시도해주세요.'
+        );
+        const today = kstToday();
+        listSymptomLogs({ from: today, to: today })
+          .then((logs) => setLoggedSymptoms(latestLogByCode(logs)))
+          .catch(() => {});
+      })
+      .finally(() => {
+        setPendingCodes((prev) => {
+          const next = new Set(prev);
+          next.delete(code);
+          return next;
+        });
+      });
   }
 
   function handleSaveCheckIn() {
-    setCheckInDone(true);
-    setSheetVisible(false);
+    if (savingCheckIn) return;
+    setSavingCheckIn(true);
+    setCheckInError(null);
+    saveTodayCheckIn({ sleep_quality: sleepQuality as 1 | 2 | 3 | 4 | 5, mood: mood as 1 | 2 | 3 | 4 | 5 })
+      .then((result) => {
+        setCheckInDone(result.completed);
+        if (result.check_in) {
+          setSleepQuality(result.check_in.sleep_quality);
+          setMood(result.check_in.mood);
+        }
+        setSheetVisible(false);
+      })
+      .catch((error) => {
+        setCheckInError(
+          error instanceof ApiError ? error.message : '체크인을 저장하지 못했어요. 다시 시도해주세요.'
+        );
+      })
+      .finally(() => setSavingCheckIn(false));
   }
+
+  if (status === 'loading') {
+    return (
+      <WarmScreen
+        header={<WarmHeader title="증상 기록" variant="minimal" onBack={() => router.back()} />}
+        scrollable={false}>
+        <View style={styles.centerFill}>
+          <ActivityIndicator color={Warm.primary} size="large" />
+        </View>
+      </WarmScreen>
+    );
+  }
+
+  if (status === 'error') {
+    return (
+      <WarmScreen
+        header={<WarmHeader title="증상 기록" variant="minimal" onBack={() => router.back()} />}
+        scrollable={false}>
+        <View style={styles.centerFill}>
+          <ThemedText style={styles.loadErrorText}>{errorMessage}</ThemedText>
+          <WarmButton label="다시 시도" onPress={handleRetry} variant="secondary" style={styles.retryButton} />
+        </View>
+      </WarmScreen>
+    );
+  }
+
+  const loggedCount = Object.keys(loggedSymptoms).length;
 
   return (
     <WarmScreen header={<WarmHeader title="증상 기록" variant="minimal" onBack={() => router.back()} />}>
@@ -84,14 +237,18 @@ export default function SymptomLogScreen() {
         <ThemedText style={styles.sectionHint}>
           한 번 누르면 기록돼요. 다시 누르면 얼마나 심한지 표시할 수 있어요.
         </ThemedText>
+        {symptomError && <ThemedText style={styles.inlineErrorText}>{symptomError}</ThemedText>}
         <View style={styles.symptomGrid}>
-          {SYMPTOM_TYPES.map((symptom) => {
-            const severity = loggedSymptoms[symptom.code];
+          {symptomTypes.map((symptom) => {
+            const entry = loggedSymptoms[symptom.code];
+            const severity = entry ? API_TO_SEVERITY[entry.severity] : undefined;
             const colors = severity ? SeverityColors[severity] : null;
+            const isPending = pendingCodes.has(symptom.code);
             return (
               <Pressable
                 key={symptom.code}
-                onPress={() => cycleSymptom(symptom.code)}
+                onPress={() => cycleSymptom(symptom)}
+                disabled={isPending}
                 accessibilityRole="button"
                 accessibilityLabel={
                   severity
@@ -104,7 +261,7 @@ export default function SymptomLogScreen() {
                     backgroundColor: colors?.soft ?? Warm.backgroundSubtle,
                     borderColor: colors?.fill ?? 'transparent',
                   },
-                  pressed && styles.pressed,
+                  (pressed || isPending) && styles.pressed,
                 ]}>
                 <ThemedText style={styles.symptomLabel}>{symptom.label}</ThemedText>
                 {/* 3. 상세 — 가장 작은 정보 단위(심각도), 색만이 아니라 텍스트로도 표시 */}
@@ -183,13 +340,30 @@ export default function SymptomLogScreen() {
           maxLabel="매우 좋음"
         />
 
-        <WarmButton label="저장하고 완료" onPress={handleSaveCheckIn} />
+        {checkInError && <ThemedText style={styles.inlineErrorText}>{checkInError}</ThemedText>}
+
+        <WarmButton label={savingCheckIn ? '저장하는 중…' : '저장하고 완료'} onPress={handleSaveCheckIn} />
       </WarmBottomSheet>
     </WarmScreen>
   );
 }
 
 const styles = StyleSheet.create({
+  centerFill: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  loadErrorText: {
+    fontSize: 16,
+    lineHeight: 23,
+    color: Warm.text,
+    textAlign: 'center',
+  },
+  retryButton: {
+    minWidth: 160,
+  },
   statusBlock: {
     gap: 6,
     position: 'relative',
@@ -251,6 +425,12 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: Warm.textSecondary,
     marginBottom: 10,
+  },
+  inlineErrorText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: Warm.secondaryStrong,
+    marginBottom: 8,
   },
   symptomGrid: {
     flexDirection: 'row',
