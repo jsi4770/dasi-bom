@@ -285,6 +285,49 @@ export async function fetchMessageSpeechFile(messageId: number): Promise<string>
   }
 }
 
+// ---- Web Push ----
+
+export type VapidPublicKeyResponse = { publicKey: string };
+
+/** 인증 불필요 — 로그인 전에도 구독을 준비할 수 있게 백엔드가 AllowAny로 열어둠.
+ * VAPID 키가 설정 안 된 경우 503으로 응답하는데, 이때는 ApiError.status로 구분해서 처리할 것. */
+export function getVapidPublicKey() {
+  return request<VapidPublicKeyResponse>('/api/push/vapid-public-key/', undefined, { skipAuth: true });
+}
+
+export type PushSubscriptionPayload = {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+};
+
+export type PushSubscriptionRecord = {
+  id: number;
+  endpoint: string;
+  created_at: string;
+};
+
+/** 같은 endpoint로 다시 호출하면 서버가 upsert한다(신규 201 / 갱신 200 — 둘 다 body는 동일 형태). */
+export function subscribePush(payload: PushSubscriptionPayload) {
+  return request<PushSubscriptionRecord>('/api/push/subscribe/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+/** deleteReminder와 동일한 이유로 authorizedFetch를 직접 쓴다 — 204 No Content라
+ * request()의 무조건적인 response.json() 파싱이 실패한다. */
+export async function unsubscribePush(endpoint: string): Promise<void> {
+  const response = await authorizedFetch('/api/push/unsubscribe/', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ endpoint }),
+  });
+  if (!response.ok) {
+    throw await toApiError(response);
+  }
+}
+
 // ---- 인증 ----
 
 export type AuthUser = {
