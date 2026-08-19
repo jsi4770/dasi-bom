@@ -9,6 +9,7 @@ from .views import (
     SymptomLogListCreateView,
     SymptomTypeListView,
     TodayCheckInView,
+    TodaySummaryView,
     WeeklyReportView,
 )
 
@@ -21,6 +22,7 @@ urlpatterns = [
     path('logs/backfill/', BackfillView.as_view(), name='log-backfill'),
     path('checkins/', DailyCheckInListView.as_view(), name='checkin-list'),
     path('checkins/today/', TodayCheckInView.as_view(), name='checkin-today'),
+    path('today-summary/', TodaySummaryView.as_view(), name='today-summary'),
     path('reports/weekly/', WeeklyReportView.as_view(), name='report-weekly'),
     path('missed-days/', MissedDaysView.as_view(), name='missed-days'),
     path('streak/', StreakView.as_view(), name='streak'),

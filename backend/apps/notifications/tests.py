@@ -712,6 +712,17 @@ class CheckinReminderTests(TestCase):
 
         self.assertEqual(targets, [])
 
+    def test_includes_user_whose_todays_checkin_has_no_mood(self):
+        """수면만 기록하고 기분은 아직 안 남긴 날은 저녁 체크인 완료로 안 친다."""
+        DailyCheckIn.objects.create(
+            user=self.user, date=self.today, sleep_quality=3, mood=None, sleep_hours=6.5,
+        )
+
+        targets = get_checkin_reminder_targets(today=self.today)
+
+        self.assertEqual(len(targets), 1)
+        self.assertEqual(targets[0]['user'], self.user)
+
 
 class CheckinReminderCommandTests(TestCase):
     AT_21_00_UTC = '2026-08-16 12:00:00'      # Asia/Seoul 기준 21:00

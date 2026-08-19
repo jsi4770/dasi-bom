@@ -98,15 +98,19 @@ def build_weekly_stats(user, week_start):
         .values_list('symptom_type__code')
         .annotate(n=Count('id'))
     )
+    # 이 리스트는 아래 여러 집계 함수가 같이 쓴다 — mood 로 거르지 않고 그 주의 모든
+    # DailyCheckIn 을 담아야, 수면만 기록한 날도 sleep_hours 평균/sleep_link 에 들어간다.
     check_ins = list(DailyCheckIn.objects.filter(user=user, date__gte=week_start, date__lte=week_end))
+    # "기록한 날"의 기준은 mood 가 채워졌는지다 — 수면만 기록한 날은 목표 일수에 안 들어간다.
+    days_recorded = sum(1 for c in check_ins if c.mood is not None)
 
     return {
         'week_start': week_start.isoformat(),
         'week_end': week_end.isoformat(),
         'total_logs': len(logs),
-        'days_recorded': len(check_ins),
+        'days_recorded': days_recorded,
         'goal_days': GOAL_DAYS_PER_WEEK,
-        'goal_met': len(check_ins) >= GOAL_DAYS_PER_WEEK,
+        'goal_met': days_recorded >= GOAL_DAYS_PER_WEEK,
         'symptoms': _symptom_breakdown(logs, prev_counts),
         'time_slots': _slot_totals(logs),
         'check_in_averages': _check_in_averages(check_ins),
@@ -197,8 +201,11 @@ def _sleep_link(logs, check_ins):
     """
     logs_per_day = Counter(timezone.localtime(log.occurred_at).date() for log in logs)
 
-    poor = [logs_per_day.get(c.date, 0) for c in check_ins if c.sleep_quality <= POOR_SLEEP_MAX]
-    good = [logs_per_day.get(c.date, 0) for c in check_ins if c.sleep_quality >= GOOD_SLEEP_MIN]
+    # sleep_quality 는 이제 선택 입력이라(수면만 따로 기록할 수 있으므로) None 인 체크인이
+    # 섞여 있을 수 있다 — 비교 연산 전에 걸러낸다.
+    scored = [c for c in check_ins if c.sleep_quality is not None]
+    poor = [logs_per_day.get(c.date, 0) for c in scored if c.sleep_quality <= POOR_SLEEP_MAX]
+    good = [logs_per_day.get(c.date, 0) for c in scored if c.sleep_quality >= GOOD_SLEEP_MIN]
 
     if len(poor) < MIN_DAYS_PER_SLEEP_GROUP or len(good) < MIN_DAYS_PER_SLEEP_GROUP:
         return None
@@ -261,8 +268,9 @@ def _care_signal(logs, check_ins):
     보시라고 안내하는 용도다. 넘은 게 없으면 아무 말도 하지 않는다.
     """
     hot_flashes = sum(1 for log in logs if log.symptom_type.code == 'hot_flash')
-    poor_nights = sum(1 for c in check_ins if c.sleep_quality <= POOR_SLEEP_MAX)
-    low_mood_days = sum(1 for c in check_ins if c.mood <= 2)
+    # sleep_quality/mood 둘 다 선택 입력이라(부분 저장) None 일 수 있다 — 걸러내고 센다.
+    poor_nights = sum(1 for c in check_ins if c.sleep_quality is not None and c.sleep_quality <= POOR_SLEEP_MAX)
+    low_mood_days = sum(1 for c in check_ins if c.mood is not None and c.mood <= 2)
 
     reasons = []
     if hot_flashes >= CARE_HOT_FLASH_PER_WEEK:
@@ -291,8 +299,9 @@ def _care_signal(logs, check_ins):
 
 
 def _missed_dates(week_start, week_end, check_ins):
-    """그 주에서 체크인이 없는 날. 오늘은 아직 저녁이 안 왔을 수 있어 빼둔다."""
-    recorded = {c.date for c in check_ins}
+    """그 주에서 저녁 체크인이 없는 날. 오늘은 아직 저녁이 안 왔을 수 있어 빼둔다."""
+    # mood 가 없으면(수면만 기록) 저녁 체크인을 한 것으로 안 친다.
+    recorded = {c.date for c in check_ins if c.mood is not None}
     today = timezone.localdate()
     last_day = min(week_end, today - timedelta(days=1))
 
@@ -320,9 +329,10 @@ def build_missed_days(user, days=MISSED_DAYS_LOOKBACK, today=None):
     start = today - timedelta(days=days)
     last_day = today - timedelta(days=1)
 
+    # mood 가 없으면(수면만 기록) 저녁 체크인을 한 것으로 안 친다.
     checked = set(
         DailyCheckIn.objects
-        .filter(user=user, date__gte=start, date__lte=last_day)
+        .filter(user=user, date__gte=start, date__lte=last_day, mood__isnull=False)
         .values_list('date', flat=True)
     )
     logged = {
@@ -349,9 +359,10 @@ def build_missed_days(user, days=MISSED_DAYS_LOOKBACK, today=None):
 def build_streak(user, today=None):
     """기록 지속 현황. 성공 지표(2주 연속 주 5일)를 앱에서 보여주기 위한 값."""
     today = today or timezone.localdate()
+    # mood 가 채워진 날만 "저녁 체크인 완료"로 센다 — 수면만 기록한 날은 스트릭에 안 들어간다.
     recorded = set(
         DailyCheckIn.objects
-        .filter(user=user, date__gte=today - timedelta(days=27), date__lte=today)
+        .filter(user=user, date__gte=today - timedelta(days=27), date__lte=today, mood__isnull=False)
         .values_list('date', flat=True)
     )
 
