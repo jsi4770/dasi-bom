@@ -187,6 +187,148 @@ class TodayCheckInTests(SymptomApiTestCase):
         self.assertFalse(response.data['completed'])
 
 
+class TodayCheckInPatchTests(SymptomApiTestCase):
+    """PATCH /checkins/today/ — 수면 등 일부 필드만 따로 저장하는 경로."""
+
+    def setUp(self):
+        super().setUp()
+        self.url = reverse('symptoms:checkin-today')
+
+    def test_sleep_only_patch_succeeds_without_mood(self):
+        response = self.client.patch(self.url, {'sleep_hours': 6.5}, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['check_in']['sleep_hours'], '6.5')
+        self.assertIsNone(response.data['check_in']['mood'])
+
+    def test_patch_preserves_existing_mood_when_only_updating_sleep(self):
+        DailyCheckIn.objects.create(user=self.user, date=timezone.localdate(), sleep_quality=3, mood=4)
+
+        response = self.client.patch(self.url, {'sleep_hours': 7.0}, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['check_in']['mood'], 4)
+        self.assertEqual(response.data['check_in']['sleep_hours'], '7.0')
+
+    def test_mood_only_patch_succeeds(self):
+        response = self.client.patch(self.url, {'mood': 5}, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['check_in']['mood'], 5)
+        self.assertIsNone(response.data['check_in']['sleep_quality'])
+
+    def test_empty_body_patch_succeeds_without_changes(self):
+        response = self.client.patch(self.url, {}, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data['check_in']['mood'])
+        self.assertEqual(DailyCheckIn.objects.filter(user=self.user).count(), 1)
+
+    def test_requires_authentication(self):
+        self.client.force_authenticate(None)
+
+        response = self.client.patch(self.url, {'sleep_hours': 6.0}, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_completed_is_false_when_only_sleep_is_patched(self):
+        response = self.client.patch(self.url, {'sleep_hours': 6.0}, format='json')
+
+        self.assertFalse(response.data['completed'])
+
+    def test_completed_is_true_once_mood_is_patched(self):
+        response = self.client.patch(self.url, {'sleep_hours': 6.0, 'mood': 4}, format='json')
+
+        self.assertTrue(response.data['completed'])
+
+    def test_rejects_out_of_scale_value(self):
+        """전용 시리얼라이저를 새로 만들었으니 choices 검증(1~5)이 여전히 걸리는지 별도 확인."""
+        response = self.client.patch(self.url, {'sleep_quality': 9}, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class TodaySummaryTests(SymptomApiTestCase):
+    """GET /today-summary/ — 홈 화면 '오늘의 기록'(증상/수면/체크인) 통합 조회."""
+
+    def setUp(self):
+        super().setUp()
+        self.url = reverse('symptoms:today-summary')
+        self.today = timezone.localdate()
+
+    def test_symptom_completed_true_with_count_when_logged_today(self):
+        SymptomLog.objects.create(user=self.user, symptom_type=self.hot_flash)
+        SymptomLog.objects.create(user=self.user, symptom_type=self.hot_flash)
+
+        response = self.client.get(self.url)
+
+        self.assertTrue(response.data['symptom']['completed'])
+        self.assertEqual(response.data['symptom']['count'], 2)
+
+    def test_symptom_completed_false_with_zero_count_when_nothing_logged(self):
+        response = self.client.get(self.url)
+
+        self.assertFalse(response.data['symptom']['completed'])
+        self.assertEqual(response.data['symptom']['count'], 0)
+
+    def test_sleep_completed_true_when_sleep_hours_is_filled(self):
+        DailyCheckIn.objects.create(user=self.user, date=self.today, sleep_hours=7.5)
+
+        response = self.client.get(self.url)
+
+        self.assertTrue(response.data['sleep']['completed'])
+        self.assertEqual(response.data['sleep']['sleep_hours'], 7.5)
+
+    def test_sleep_completed_false_when_sleep_hours_is_missing(self):
+        DailyCheckIn.objects.create(user=self.user, date=self.today, mood=3)
+
+        response = self.client.get(self.url)
+
+        self.assertFalse(response.data['sleep']['completed'])
+        self.assertIsNone(response.data['sleep']['sleep_hours'])
+
+    def test_checkin_completed_true_when_mood_is_filled(self):
+        DailyCheckIn.objects.create(user=self.user, date=self.today, sleep_quality=3, mood=4)
+
+        response = self.client.get(self.url)
+
+        self.assertTrue(response.data['checkin']['completed'])
+        self.assertEqual(response.data['checkin']['mood'], 4)
+
+    def test_checkin_completed_false_when_only_sleep_is_recorded(self):
+        DailyCheckIn.objects.create(user=self.user, date=self.today, sleep_hours=6.5)
+
+        response = self.client.get(self.url)
+
+        self.assertFalse(response.data['checkin']['completed'])
+        self.assertIsNone(response.data['checkin']['mood'])
+
+    def test_no_checkin_at_all_reports_sleep_and_checkin_as_incomplete(self):
+        response = self.client.get(self.url)
+
+        self.assertFalse(response.data['sleep']['completed'])
+        self.assertIsNone(response.data['sleep']['sleep_hours'])
+        self.assertFalse(response.data['checkin']['completed'])
+        self.assertIsNone(response.data['checkin']['mood'])
+
+    def test_requires_authentication(self):
+        self.client.force_authenticate(None)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_another_users_data_does_not_leak(self):
+        SymptomLog.objects.create(user=self.other, symptom_type=self.hot_flash)
+        DailyCheckIn.objects.create(user=self.other, date=self.today, sleep_quality=3, mood=3, sleep_hours=8)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.data['symptom']['count'], 0)
+        self.assertFalse(response.data['sleep']['completed'])
+        self.assertFalse(response.data['checkin']['completed'])
+
+
 class DailyCheckInListTests(SymptomApiTestCase):
     def test_lists_only_own_checkins_in_range(self):
         today = timezone.localdate()
@@ -278,6 +420,29 @@ class WeeklyReportTests(SymptomApiTestCase):
         self._check_in(self.monday)
 
         self.assertIsNone(self.client.get(self.url).data['stats']['check_in_averages']['sleep_hours'])
+
+    def test_sleep_only_checkin_is_excluded_from_days_recorded_but_still_averaged(self):
+        """mood 없는(수면만 기록한) 날은 목표 일수엔 안 들어가지만, 수면 시간 평균에서는 빠지면 안 된다 —
+        수면 화면을 따로 만드는 목적 자체가 그 데이터를 리포트에 반영하는 것이기 때문이다."""
+        DailyCheckIn.objects.create(
+            user=self.user, date=self.monday, sleep_quality=None, mood=None, sleep_hours=7.0,
+        )
+        self._check_in(self.monday + timedelta(days=1))  # mood 있는 정상 체크인 (sleep_hours 는 안 채움)
+
+        stats = self.client.get(self.url).data['stats']
+
+        self.assertEqual(stats['days_recorded'], 1)
+        self.assertEqual(stats['check_in_averages']['sleep_hours'], 7.0)
+
+    def test_sleep_only_checkin_still_shows_up_as_a_missed_date(self):
+        """수면만 기록한 날은 저녁 체크인을 한 게 아니므로 리포트의 미기록일 목록에 남는다."""
+        DailyCheckIn.objects.create(
+            user=self.user, date=self.monday, sleep_quality=3, mood=None, sleep_hours=6.5,
+        )
+
+        missed = self.client.get(self.url).data['stats']['missed_dates']
+
+        self.assertIn(self.monday.isoformat(), missed)
 
     def test_skips_sleep_link_when_sample_is_too_small(self):
         self._check_in(self.monday, sleep_quality=2)
@@ -470,6 +635,16 @@ class MissedDaysTests(SymptomApiTestCase):
 
         self.assertNotIn(2, days_ago)
 
+    def test_sleep_only_checkin_still_counts_as_missed(self):
+        """mood 없이 수면만 기록한 날은 저녁 체크인을 한 게 아니라서 챗봇이 다시 물어봐야 한다."""
+        DailyCheckIn.objects.create(
+            user=self.user, date=self._day(1), sleep_quality=3, mood=None, sleep_hours=6.5,
+        )
+
+        days_ago = [d['days_ago'] for d in self.client.get(self.url, {'days': 3}).data['missed_days']]
+
+        self.assertIn(1, days_ago)
+
     def test_today_is_never_asked_about(self):
         """하루가 끝나기도 전에 "오늘 기록이 없네요" 하고 묻는 건 채근이다."""
         days_ago = [d['days_ago'] for d in self.client.get(self.url, {'days': 3}).data['missed_days']]
@@ -613,6 +788,25 @@ class StreakTests(SymptomApiTestCase):
             )
 
         self.assertEqual(self.client.get(self.url).data['current_streak'], 2)
+
+    def test_sleep_only_checkin_does_not_count_toward_streak(self):
+        """mood 없이 수면만 기록한 날은 저녁 체크인으로 안 치므로 스트릭에서 빠진다."""
+        today = timezone.localdate()
+        DailyCheckIn.objects.create(
+            user=self.user, date=today - timedelta(days=1), sleep_quality=3, mood=None, sleep_hours=6.5,
+        )
+        DailyCheckIn.objects.create(
+            user=self.user, date=today - timedelta(days=2), sleep_quality=3, mood=3,
+        )
+
+        self.assertEqual(self.client.get(self.url).data['current_streak'], 0)
+
+    def test_checkin_with_mood_counts_toward_streak(self):
+        """mood 가 채워진 체크인은 지금까지와 동일하게 스트릭에 들어간다."""
+        today = timezone.localdate()
+        DailyCheckIn.objects.create(user=self.user, date=today - timedelta(days=1), sleep_quality=3, mood=3)
+
+        self.assertEqual(self.client.get(self.url).data['current_streak'], 1)
 
     def test_reports_two_week_goal(self):
         """주가 다 지난 시점을 기준으로 봐야 해서, 엔드포인트 대신 기준일을 고정해 호출한다."""

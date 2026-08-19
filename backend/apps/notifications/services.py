@@ -121,7 +121,11 @@ def get_checkin_reminder_targets(today=None):
     if today is None:
         today = timezone.localdate()
 
-    checked_in_user_ids = DailyCheckIn.objects.filter(date=today).values_list('user_id', flat=True)
+    # mood 가 채워져야 저녁 체크인을 제대로 한 것으로 본다 — 수면만 따로 기록한 날은
+    # (부분 저장) 아직 저녁 체크인 전으로 취급해 알림 대상에 남긴다.
+    checked_in_user_ids = (
+        DailyCheckIn.objects.filter(date=today, mood__isnull=False).values_list('user_id', flat=True)
+    )
 
     users = (
         get_user_model().objects

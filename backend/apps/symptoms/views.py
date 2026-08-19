@@ -17,6 +17,7 @@ from .analysis import (
 from .models import DailyCheckIn, SymptomLog, SymptomType, WeeklyReport
 from .serializers import (
     BackfillSerializer,
+    DailyCheckInPatchSerializer,
     DailyCheckInSerializer,
     SymptomLogSerializer,
     SymptomTypeSerializer,
@@ -119,12 +120,59 @@ class TodayCheckInView(APIView):
             status=status.HTTP_200_OK if existed else status.HTTP_201_CREATED,
         )
 
+    def patch(self, request):
+        """수면 등 일부 필드만 부분 저장한다 — 저녁 체크인(mood)은 안 건드려도 된다."""
+        check_in, _ = DailyCheckIn.objects.get_or_create(user=request.user, date=timezone.localdate())
+
+        serializer = DailyCheckInPatchSerializer(check_in, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        check_in = serializer.save()
+
+        return Response(self._payload(check_in))
+
     def _payload(self, check_in):
         return {
             'date': timezone.localdate(),
-            'completed': check_in is not None,
+            # mood 가 없으면(수면만 기록) 저녁 체크인을 한 것으로 안 친다 — 2단계에서 통일한
+            # "완료" 기준과 맞춘다.
+            'completed': check_in is not None and check_in.mood is not None,
             'check_in': DailyCheckInSerializer(check_in).data if check_in else None,
         }
+
+
+class TodaySummaryView(APIView):
+    """홈 화면의 "오늘의 기록"(증상/수면/저녁 체크인) 진행 상황 통합 조회.
+
+    새 모델 없이 SymptomLog·DailyCheckIn 을 오늘 날짜로 조회만 해서 조합한다.
+    얼굴 사진(FaceAnalysis)은 아직 범위 밖 — 필요해지면 photo 항목을 추가한다.
+    수면 완료 기준은 sleep_hours(체크인 완료 기준인 mood 와는 다른 필드)다 — 수면 화면이
+    저장하는 값과 정확히 맞추기 위해서다.
+    """
+
+    def get(self, request):
+        user = request.user
+        today = timezone.localdate()
+
+        symptom_count = SymptomLog.objects.filter(user=user, occurred_at__date=today).count()
+        check_in = DailyCheckIn.objects.filter(user=user, date=today).first()
+
+        return Response({
+            'date': today,
+            'symptom': {
+                'completed': symptom_count > 0,
+                'count': symptom_count,
+            },
+            'sleep': {
+                'completed': check_in is not None and check_in.sleep_hours is not None,
+                # ModelSerializer 를 안 거치는 수제 dict라 Decimal 이 기본 인코더로 문자열이
+                # 되는 걸 막으려고 직접 float 로 바꾼다.
+                'sleep_hours': float(check_in.sleep_hours) if check_in and check_in.sleep_hours is not None else None,
+            },
+            'checkin': {
+                'completed': check_in is not None and check_in.mood is not None,
+                'mood': check_in.mood if check_in else None,
+            },
+        })
 
 
 class WeeklyReportView(APIView):

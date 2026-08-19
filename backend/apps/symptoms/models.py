@@ -115,9 +115,14 @@ class DailyCheckIn(models.Model):
     )
     date = models.DateField(help_text='체크인 대상 날짜 (Asia/Seoul 기준)')
 
-    # 입력 부담을 줄이려고 필수는 수면·기분 두 개뿐. 나머지는 건너뛸 수 있다.
-    sleep_quality = models.PositiveSmallIntegerField(choices=Scale.choices, help_text='어젯밤 잘 주무셨나요')
-    mood = models.PositiveSmallIntegerField(choices=Scale.choices, help_text='오늘 기분')
+    # DB 레벨은 nullable — 수면 단계만 먼저 저장하는 부분 저장(PATCH)을 허용하기 위해서다.
+    # 저녁 체크인(PUT)에서는 여전히 필수로 받는다 — DailyCheckInSerializer의 extra_kwargs 참고.
+    sleep_quality = models.PositiveSmallIntegerField(
+        choices=Scale.choices, null=True, blank=True, help_text='어젯밤 잘 주무셨나요',
+    )
+    mood = models.PositiveSmallIntegerField(
+        choices=Scale.choices, null=True, blank=True, help_text='오늘 기분',
+    )
     fatigue = models.PositiveSmallIntegerField(
         choices=Scale.choices, null=True, blank=True, help_text='높을수록 덜 피곤함',
     )
