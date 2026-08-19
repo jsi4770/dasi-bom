@@ -10,7 +10,12 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from apps.notifications.services import get_due_reminders, send_reminder_push
+from apps.notifications.services import (
+    get_checkin_reminder_targets,
+    get_due_reminders,
+    send_checkin_reminder_push,
+    send_reminder_push,
+)
 
 REQUIRED_VAPID_SETTINGS = ('VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_CLAIMS_EMAIL')
 
@@ -55,6 +60,14 @@ class Command(BaseCommand):
                 if skip_reason is not None:
                     self.stdout.write(f'reminder_id={reminder.pk} 스킵 — {skip_reason}')
 
+        # 저녁 체크인 미완료 알림 — Cron이 5분 단위로 도는 틱 중 21:00 정각 한 번에만 발송.
+        if now.hour == 21 and now.minute == 0:
+            checkin_targets = get_checkin_reminder_targets(today=now.date())
+            if dry_run:
+                self._print_checkin_dry_run(timestamp, checkin_targets)
+            else:
+                self._send_checkin_reminders(timestamp, checkin_targets, verbose)
+
     def _print_dry_run(self, timestamp, due):
         if not due:
             self.stdout.write(f'[{timestamp}] 발송 대상 없음')
@@ -91,3 +104,37 @@ class Command(BaseCommand):
                     )
 
         self.stdout.write(f'[{timestamp}] 발송 완료 {sent}건, 실패 {failed}건, 만료 정리 {expired}건')
+
+    def _print_checkin_dry_run(self, timestamp, targets):
+        if not targets:
+            self.stdout.write(f'[{timestamp}] [체크인 알림] 발송 대상 없음')
+            return
+
+        self.stdout.write(f'[{timestamp}] [체크인 알림] 발송 대상 {len(targets)}명')
+        for target in targets:
+            self.stdout.write(
+                f'- user: {target["user"].username} → 구독 {len(target["subscriptions"])}개'
+            )
+
+    def _send_checkin_reminders(self, timestamp, targets, verbose):
+        sent = failed = expired = 0
+
+        for target in targets:
+            for subscription in target['subscriptions']:
+                outcome = send_checkin_reminder_push(subscription)
+                if outcome is True:
+                    sent += 1
+                    outcome_label = '발송 완료'
+                elif outcome == 'expired':
+                    expired += 1
+                    outcome_label = '만료 정리'
+                else:
+                    failed += 1
+                    outcome_label = '발송 실패'
+
+                if verbose:
+                    self.stdout.write(
+                        f'checkin user={target["user"].username} → {subscription.endpoint[:50]} : {outcome_label}'
+                    )
+
+        self.stdout.write(f'[{timestamp}] [체크인 알림] 발송 완료 {sent}건, 실패 {failed}건, 만료 정리 {expired}건')

@@ -285,6 +285,49 @@ export async function fetchMessageSpeechFile(messageId: number): Promise<string>
   }
 }
 
+// ---- Web Push ----
+
+export type VapidPublicKeyResponse = { publicKey: string };
+
+/** 인증 불필요 — 로그인 전에도 구독을 준비할 수 있게 백엔드가 AllowAny로 열어둠.
+ * VAPID 키가 설정 안 된 경우 503으로 응답하는데, 이때는 ApiError.status로 구분해서 처리할 것. */
+export function getVapidPublicKey() {
+  return request<VapidPublicKeyResponse>('/api/push/vapid-public-key/', undefined, { skipAuth: true });
+}
+
+export type PushSubscriptionPayload = {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+};
+
+export type PushSubscriptionRecord = {
+  id: number;
+  endpoint: string;
+  created_at: string;
+};
+
+/** 같은 endpoint로 다시 호출하면 서버가 upsert한다(신규 201 / 갱신 200 — 둘 다 body는 동일 형태). */
+export function subscribePush(payload: PushSubscriptionPayload) {
+  return request<PushSubscriptionRecord>('/api/push/subscribe/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+/** deleteReminder와 동일한 이유로 authorizedFetch를 직접 쓴다 — 204 No Content라
+ * request()의 무조건적인 response.json() 파싱이 실패한다. */
+export async function unsubscribePush(endpoint: string): Promise<void> {
+  const response = await authorizedFetch('/api/push/unsubscribe/', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ endpoint }),
+  });
+  if (!response.ok) {
+    throw await toApiError(response);
+  }
+}
+
 // ---- 인증 ----
 
 export type AuthUser = {
@@ -358,16 +401,30 @@ export async function logout(): Promise<void> {
 
 // ---- 증상·주간 리포트 ----
 
+export type SymptomTypeSummary = {
+  id: number;
+  code: string;
+  label: string;
+  category: string;
+  emoji: string;
+  order: number;
+};
+
 export type SymptomLogEntry = {
   id: number;
   symptom_type: number;
-  symptom_type_detail: { id: number; code: string; label: string; category: string; emoji: string; order: number };
+  symptom_type_detail: SymptomTypeSummary;
   severity: 1 | 2 | 3;
   occurred_at: string;
   memo: string;
   source: 'manual' | 'chat' | 'backfill' | 'seed';
   created_at: string;
 };
+
+/** 앱 버튼 목록 — GET /api/symptoms/types/ (is_active만 내려온다). */
+export function listSymptomTypes() {
+  return request<SymptomTypeSummary[]>('/api/symptoms/types/');
+}
 
 export type SymptomBreakdownRow = {
   code: string;
@@ -454,6 +511,9 @@ export type WeeklyReport = {
   summary_text: string;
   generated_at: string;
   summary_source: 'ai' | 'cached' | 'template';
+  /** week 파라미터 없이 요청했는데 이번 주가 비어 있어 기록이 남은 최근 주로 대신 보여주는 중이면 true
+   * (views.py WeeklyReportView 참고). 이미 내려오던 필드인데 타입에 빠져 있었다. */
+  showing_other_week: boolean;
 };
 
 export function getWeeklyReport(opts?: { week?: string; refresh?: boolean }) {
@@ -468,6 +528,25 @@ export function getWeeklyReport(opts?: { week?: string; refresh?: boolean }) {
 export function listSymptomLogs(range: { from: string; to: string }) {
   const params = new URLSearchParams({ from: range.from, to: range.to });
   return request<SymptomLogEntry[]>(`/api/symptoms/logs/?${params.toString()}`);
+}
+
+/** 원터치 기록 — occurred_at을 생략하면 서버가 지금 시각을 채운다(model default=timezone.now). */
+export function createSymptomLog(payload: { symptom_type: number; severity: 1 | 2 | 3 }) {
+  return request<SymptomLogEntry>('/api/symptoms/logs/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+/** SymptomLogDetailView는 Retrieve+Destroy만 있어 수정(PATCH)이 없다 — 심각도를 바꿀 때도
+ * 이 함수로 기존 기록을 지우고 createSymptomLog로 새로 만든다.
+ * deleteReminder와 동일한 이유로 authorizedFetch를 직접 쓴다(204 No Content). */
+export async function deleteSymptomLog(logId: number): Promise<void> {
+  const response = await authorizedFetch(`/api/symptoms/logs/${logId}/`, { method: 'DELETE' });
+  if (!response.ok) {
+    throw await toApiError(response);
+  }
 }
 
 export type DailyCheckInEntry = {
@@ -488,4 +567,25 @@ export type DailyCheckInEntry = {
 export function listCheckIns(range: { from: string; to: string }) {
   const params = new URLSearchParams({ from: range.from, to: range.to });
   return request<DailyCheckInEntry[]>(`/api/symptoms/checkins/?${params.toString()}`);
+}
+
+/** TodayCheckInView의 GET/PUT 공통 응답 — 아직 체크인이 없어도 404가 아니라 completed:false로 200을 준다. */
+export type TodayCheckInResponse = {
+  date: string;
+  completed: boolean;
+  check_in: DailyCheckInEntry | null;
+};
+
+export function getTodayCheckIn() {
+  return request<TodayCheckInResponse>('/api/symptoms/checkins/today/');
+}
+
+/** 필수 필드(수면·기분)만 보내도 된다 — fatigue/stress 등 나머지는 serializer가 required=False라
+ * 요청에 없으면 validated_data에서 빠지고, update_or_create가 defaults에 없는 필드는 건드리지 않는다. */
+export function saveTodayCheckIn(payload: { sleep_quality: 1 | 2 | 3 | 4 | 5; mood: 1 | 2 | 3 | 4 | 5 }) {
+  return request<TodayCheckInResponse>('/api/symptoms/checkins/today/', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
 }
