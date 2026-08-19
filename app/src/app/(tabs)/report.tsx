@@ -1,12 +1,13 @@
+import { Image } from 'expo-image';
 import { useCallback, useEffect, useState } from 'react';
 import { router } from 'expo-router';
-import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
+import { SymbolView } from 'expo-symbols';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { WarmButton } from '@/components/warm/warm-button';
 import { WarmScreen } from '@/components/warm/warm-screen';
-import { CHECKIN_SCALE_LABELS } from '@/constants/mock-data';
-import { Warm } from '@/constants/theme';
+import { blobDecorationStyle, Warm } from '@/constants/theme';
 import {
   ApiError,
   getWeeklyReport,
@@ -15,16 +16,32 @@ import {
   type CareSignalReason,
   type DailyCheckInEntry,
   type SkinLink,
+  type SleepLink,
   type SymptomBreakdownRow,
   type SymptomLogEntry,
   type WeeklyReport,
+  type WeeklyReportStats,
 } from '@/lib/api';
 
 const WEEKDAY_LABELS = ['월', '화', '수', '목', '금', '토', '일'];
 
+// 리포트 전용 마스코트 — 온보딩 이미지(assets/images/onboarding/)와 별도로 관리한다.
+// 신규 사용자(기록 0건) / 기록 부족(3일 미만) 상태 화면 공통으로 쓴다.
+const REPORT_MASCOT_IMAGE = require('@/assets/images/report/mascot-state.png');
+
+// 시안 문구("3일만 기록해도 흐름이 보이기 시작해요")를 그대로 기준값으로 쓴다 — 별도 기획 임계값이 없어서
+// 복잡한 규칙을 새로 만들지 않고 시안이 이미 제시한 숫자를 따른다.
+const MIN_DAYS_FOR_FULL_VIEW = 3;
+
+// 증상 랭킹 막대의 기준 스케일. 이 기간의 1위 횟수를 그대로 분모로 쓰면 모든 증상이
+// 1회뿐인 주에도 막대가 100%까지 차 실제보다 심각해 보인다 — 하루 한 번(주 7회) 수준은
+// 돼야 막대가 꽉 찬다고 보고, 그 미만인 주는 분모를 이 값으로 고정해 압축한다.
+// 1위가 이 값 이상이면 기존처럼 서로 다른 증상 간 상대적 차이가 그대로 보인다.
+const SYMPTOM_BAR_SCALE_FLOOR = 7;
+
+// ---- 날짜 계산 ----
 // occurred_at은 UTC ISO 문자열(DRF 기본 직렬화, settings.USE_TZ=True)이라, 백엔드가
-// timezone.localtime()으로 요일/시간대를 계산하는 것과 맞추려면 Asia/Seoul 기준으로 다시 변환해야 한다.
-// 문자열 슬라이싱은 자정 근처 기록(예: KST 00:30 = UTC 전날 15:30)을 잘못된 날짜로 집계하므로 쓰지 않는다.
+// timezone.localtime()으로 요일을 계산하는 것과 맞추려면 Asia/Seoul 기준으로 다시 변환해야 한다.
 const KST_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' });
 
 function kstDateKey(date: Date) {
@@ -42,6 +59,16 @@ function buildWeekDates(weekStart: string) {
   return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 }
 
+// backend/apps/symptoms/analysis.py의 week_bounds와 동일한 월요일 기준 계산 — "다음 주" 버튼을
+// 미래로 넘어가지 못하게 막는 기준점으로 쓴다.
+function currentWeekMonday() {
+  const todayKey = kstDateKey(new Date());
+  const [y, m, d] = todayKey.split('-').map(Number);
+  const weekday = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7; // 월=0 ~ 일=6
+  return addDays(todayKey, -weekday);
+}
+
+// ---- 요일별 값 배열 ----
 function buildDailyHotFlashCounts(logs: SymptomLogEntry[], weekDates: string[]) {
   const countByKey = new Map(weekDates.map((d) => [d, 0]));
   for (const log of logs) {
@@ -59,91 +86,47 @@ function buildDailySleepHours(checkIns: DailyCheckInEntry[], weekDates: string[]
   return weekDates.map((d) => byDate.get(d) ?? null);
 }
 
-function buildDailySkinScores(skinLink: SkinLink, weekDates: string[]) {
-  const byDate = new Map((skinLink?.days ?? []).map((d) => [d.date, d.redness_score]));
-  return weekDates.map((d) => byDate.get(d) ?? null);
+// ---- 표기 헬퍼 ----
+function formatShortRange(start: string, end: string) {
+  const [, sm, sd] = start.split('-');
+  const [, em, ed] = end.split('-');
+  return `${Number(sm)}/${Number(sd)} ~ ${Number(em)}/${Number(ed)}`;
 }
 
-// 그 주 최댓값의 70% 이상이면 진한 색, 그 아래 0 초과 값은 옅은 색, 값이 없거나 0이면 데이터 없음 스타일.
-// "가장 심했던/가장 적었던 날"처럼 해석을 붙이지 않고 크기만 시각화한다.
-const TIMELINE_ROW_HEIGHT = 42;
-const TIMELINE_MIN_BAR = 6;
-const TIMELINE_SOLID_RATIO = 0.7;
-const TIMELINE_NO_DATA_COLOR = 'rgba(46,42,36,0.1)';
+function formatLongRange(start: string, end: string) {
+  const [, sm, sd] = start.split('-');
+  const [, em, ed] = end.split('-');
+  return `${Number(sm)}월 ${Number(sd)}일 ~ ${Number(em)}월 ${Number(ed)}일`;
+}
 
-function timelineBarVisual(value: number | null, maxValue: number, colors: { solid: string; dimmed: string }) {
-  if (value == null || value === 0) {
-    return { height: TIMELINE_MIN_BAR, backgroundColor: TIMELINE_NO_DATA_COLOR };
+function weekNavLabel(weekStart: string, thisMonday: string) {
+  const diffWeeks = Math.round((Date.parse(thisMonday) - Date.parse(weekStart)) / (7 * 86400000));
+  return diffWeeks <= 0 ? '최근 1주' : `${diffWeeks}주 전`;
+}
+
+function formatHoursMinutes(hours: number) {
+  const totalMinutes = Math.round(hours * 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return m === 0 ? `${h}시간` : `${h}시간 ${m}분`;
+}
+
+// 이번 주 vs 지난주 비교 없이, 이 기간 안에서 가장 눈에 띄는 사실 하나만 고른다.
+// 여러 문장을 조합하지 않는 이유: 시안은 말풍선 한 줄 분량을 요구했고, 조합형 문장은
+// 데이터 조합이 늘어날 때마다 분기가 같이 늘어나 유지보수가 어려워진다.
+function buildInsightLine(stats: WeeklyReportStats): string | null {
+  const hotFlash = stats.symptoms.find((s) => s.code === 'hot_flash');
+  if (hotFlash && hotFlash.peak_slot_label) {
+    return `${hotFlash.label}는 주로 ${hotFlash.peak_slot_label} 시간대에 기록됐어요.`;
   }
-  const ratio = maxValue > 0 ? value / maxValue : 0;
-  const height = TIMELINE_MIN_BAR + ratio * (TIMELINE_ROW_HEIGHT - TIMELINE_MIN_BAR);
-  return { height, backgroundColor: ratio >= TIMELINE_SOLID_RATIO ? colors.solid : colors.dimmed };
-}
-
-const TIMELINE_COLORS = {
-  hotFlash: { solid: '#D3968C', dimmed: 'rgba(211,150,140,0.55)' },
-  sleep: { solid: '#0F3D2C', dimmed: 'rgba(15,61,44,0.28)' },
-  skin: { solid: '#839958', dimmed: 'rgba(131,153,88,0.4)' },
-};
-
-function TimelineRow({
-  label,
-  values,
-  colors,
-}: {
-  label: string;
-  values: (number | null)[];
-  colors: { solid: string; dimmed: string };
-}) {
-  const max = Math.max(0, ...values.filter((v): v is number => v != null));
-  return (
-    <View style={styles.timelineRow}>
-      <ThemedText style={styles.timelineRowLabel}>{label}</ThemedText>
-      <View style={styles.timelineBars}>
-        {values.map((value, index) => (
-          <View key={index} style={[styles.timelineBar, timelineBarVisual(value, max, colors)]} />
-        ))}
-      </View>
-    </View>
-  );
-}
-
-// 지난주 대비 증감 배지/수치의 색상 — 홍조는 줄수록 개선, 늘수록 주의. 경고색(빨강·주황)은 쓰지 않는다.
-const POLARITY_COLORS = {
-  improve: { bg: '#E8EDDD', text: '#3D5226' },
-  caution: { bg: '#F4E2D4', text: '#6E3B26' },
-  neutral: { bg: '#F3EFE6', text: '#2E2A24' },
-} as const;
-
-function hotFlashBadgeText(hotFlash: SymptomBreakdownRow) {
-  if (hotFlash.delta === 0) return `${hotFlash.label} 비슷해요`;
-  const direction = hotFlash.delta < 0 ? '줄었어요' : '늘었어요';
-  return `${hotFlash.label} ${Math.abs(hotFlash.delta)}회 ${direction}`;
-}
-
-function formatDeltaChip(delta: number) {
-  if (delta === 0) return null;
-  const sign = delta < 0 ? '−' : '+';
-  return `${sign}${Math.abs(delta)}`;
-}
-
-function moodQualitativeLabel(mood: number | null) {
-  if (mood == null) return null;
-  const index = Math.min(4, Math.max(0, Math.round(mood) - 1));
-  return CHECKIN_SCALE_LABELS[index];
-}
-
-// summary_text(AI 자유문)는 매주 문장 구조가 달라질 수 있어 시니어 대상 화면엔 부적합 — 대신
-// stats의 구조화된 필드에서 직접 문장을 조합한다. 형식이 항상 보장된다.
-function buildHeaderSummary(hotFlash: SymptomBreakdownRow | undefined) {
-  if (!hotFlash) return '이번 주엔 홍조 기록이 없었어요.';
-  if (hotFlash.prev_count > 0 && hotFlash.delta !== 0) {
-    return `지난주보다 홍조 기록이 ${hotFlash.delta < 0 ? '줄었어요' : '늘었어요'}.`;
+  if (stats.sleep_link && stats.sleep_link.difference !== 0) {
+    const direction = stats.sleep_link.difference > 0 ? '많았어요' : '적었어요';
+    return `잘 못 잔 날 다음에는 증상 기록이 하루 평균 ${Math.abs(stats.sleep_link.difference)}개 더 ${direction}.`;
   }
-  if (hotFlash.prev_count > 0 && hotFlash.delta === 0) {
-    return '지난주와 비슷하게 홍조를 기록하셨어요.';
+  if (hotFlash && hotFlash.count > 0) {
+    return `이 기간 ${hotFlash.label}를 ${hotFlash.count}회 기록했어요.`;
   }
-  return `이번 주 홍조를 ${hotFlash.count}회 기록했어요.`;
+  return null;
 }
 
 // care_signal.reasons[].label은 백엔드가 붙인 원문이라 기술적으로 읽힐 수 있어, code 기준으로
@@ -182,31 +165,316 @@ function describeCareReason(reason: CareSignalReason) {
   };
 }
 
-// 시안의 유기적 얼룩(비대칭 border-radius)은 RN의 borderRadius가 지원하지 않는 CSS 전용 문법이라,
-// 이 앱의 다른 장식 블롭들과 마찬가지로 원형 + 방사형 그라데이션으로 근사한다.
-const HEADER_BLOB_GRADIENT = 'radial-gradient(circle at 38% 34%, #839958 0%, #FBF9F3 76%)';
-const headerBlobBackground = Platform.select({
-  web: { backgroundImage: HEADER_BLOB_GRADIENT },
-  default: { experimental_backgroundImage: HEADER_BLOB_GRADIENT },
-});
+const HOT_FLASH_BAR_COLOR = Warm.secondary;
+const SLEEP_BAR_COLOR = Warm.primary;
+const BAR_NO_DATA_COLOR = 'rgba(46,42,36,0.14)';
+const BAR_MAX_HEIGHT = 96;
+const BAR_MIN_HEIGHT = 8;
+const BAR_FLOOR_HEIGHT = 3; // 기록 없는 날: 막대 대신 얇은 바닥선
+
+function WeekBarChart({
+  weekDates,
+  todayKey,
+  values,
+  max,
+  barColor,
+  height = BAR_MAX_HEIGHT,
+}: {
+  weekDates: string[];
+  todayKey: string;
+  values: (number | null)[];
+  max: number;
+  barColor: (value: number, index: number) => string;
+  height?: number;
+}) {
+  return (
+    <View>
+      <View style={[styles.barRow, { height }]}>
+        {values.map((value, index) => {
+          const hasValue = value != null;
+          const ratio = hasValue && max > 0 ? Math.min(1, Math.max(0, value / max)) : 0;
+          const barHeight = hasValue ? BAR_MIN_HEIGHT + ratio * (height - BAR_MIN_HEIGHT) : BAR_FLOOR_HEIGHT;
+          return (
+            <View
+              key={weekDates[index]}
+              style={[
+                styles.bar,
+                {
+                  height: barHeight,
+                  backgroundColor: hasValue ? barColor(value, index) : BAR_NO_DATA_COLOR,
+                  borderRadius: hasValue ? 6 : 2,
+                },
+              ]}
+            />
+          );
+        })}
+      </View>
+      <View style={styles.weekdayRow}>
+        {WEEKDAY_LABELS.map((label, index) => (
+          <ThemedText
+            key={label}
+            style={[
+              styles.weekdayLabel,
+              weekDates[index] === todayKey && styles.weekdayLabelToday,
+              values[index] == null && styles.weekdayLabelDim,
+            ]}>
+            {label}
+          </ThemedText>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function WeekNavBar({
+  label,
+  rangeLabel,
+  onPrev,
+  onNext,
+  nextDisabled,
+}: {
+  label: string;
+  rangeLabel: string;
+  onPrev: () => void;
+  onNext: () => void;
+  nextDisabled: boolean;
+}) {
+  return (
+    <View style={styles.weekNav}>
+      <Pressable onPress={onPrev} accessibilityLabel="이전 주로 이동" style={styles.weekNavButton}>
+        <SymbolView
+          name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }}
+          size={16}
+          tintColor={Warm.primaryStrong}
+        />
+      </Pressable>
+      <View style={styles.weekNavCenter}>
+        <ThemedText style={styles.weekNavLabel}>{label}</ThemedText>
+        <ThemedText style={styles.weekNavRange}>{rangeLabel}</ThemedText>
+      </View>
+      <Pressable
+        onPress={onNext}
+        disabled={nextDisabled}
+        accessibilityLabel="다음 주로 이동"
+        style={[styles.weekNavButton, nextDisabled && styles.weekNavButtonDisabled]}>
+        <SymbolView
+          name={{ ios: 'chevron.right', android: 'arrow_forward', web: 'arrow_forward' }}
+          size={16}
+          tintColor={nextDisabled ? Warm.textTertiary : Warm.primaryStrong}
+        />
+      </Pressable>
+    </View>
+  );
+}
+
+// 홍조는 이 리포트의 메인 지표라 요일별 막대그래프로 크게 보여준다. 피부(홍조) 점수는 사진을 찍은
+// 날에만 채워지는 별도 출처라 그래프로 나란히 두면 두 그래프가 서로 다른 걸 재는데도 같은 비중으로
+// 보여 헷갈린다 — 평균 점수 한 줄만 작게 보조로 붙인다.
+function HotFlashSection({
+  hotFlashDaily,
+  weekDates,
+  todayKey,
+  skinLink,
+}: {
+  hotFlashDaily: number[];
+  weekDates: string[];
+  todayKey: string;
+  skinLink: SkinLink;
+}) {
+  const values = hotFlashDaily.map((v) => (v > 0 ? v : null));
+  const total = hotFlashDaily.reduce((a, b) => a + b, 0);
+  const max = Math.max(1, ...hotFlashDaily);
+  const peakIndex = values.reduce<number>(
+    (best, v, i) => (v != null && (best === -1 || v > (values[best] ?? -1)) ? i : best),
+    -1
+  );
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHeaderRow}>
+        <ThemedText style={styles.sectionTitle}>홍조</ThemedText>
+        <ThemedText style={styles.sectionHeaderValue}>이 기간 {total}회 기록</ThemedText>
+      </View>
+      <ThemedText style={styles.sectionDescription}>직접 남기신 홍조 기록이에요.</ThemedText>
+
+      <WeekBarChart weekDates={weekDates} todayKey={todayKey} values={values} max={max} barColor={() => HOT_FLASH_BAR_COLOR} />
+
+      <View style={styles.sectionFooterRow}>
+        {peakIndex >= 0 ? (
+          <ThemedText style={styles.sectionFooterText}>
+            가장 많았던 날 {WEEKDAY_LABELS[peakIndex]}요일 {values[peakIndex]}회
+          </ThemedText>
+        ) : (
+          <ThemedText style={styles.sectionFooterText}>홍조를 기록하시면 요일별 패턴을 보여드려요.</ThemedText>
+        )}
+      </View>
+
+      {skinLink && (
+        <View style={styles.skinScoreChip}>
+          <ThemedText style={styles.skinScoreChipLabel}>사진 기준 평균 피부 점수</ThemedText>
+          <ThemedText style={styles.skinScoreChipValue}>{skinLink.average_redness}점</ThemedText>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function SleepSection({
+  checkIns,
+  weekDates,
+  todayKey,
+  avgSleepHours,
+  sleepLink,
+}: {
+  checkIns: DailyCheckInEntry[];
+  weekDates: string[];
+  todayKey: string;
+  avgSleepHours: number | null;
+  sleepLink: SleepLink;
+}) {
+  const values = buildDailySleepHours(checkIns, weekDates);
+  const recordedDays = values.filter((v) => v != null).length;
+  const max = Math.max(1, ...values.filter((v): v is number => v != null));
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHeaderRow}>
+        <ThemedText style={styles.sectionTitle}>수면 시간</ThemedText>
+        <ThemedText style={styles.sectionHeaderValue}>{recordedDays}일 기록</ThemedText>
+      </View>
+      <ThemedText style={styles.sectionDescription}>체크인에 남기신 잠든 시간이에요.</ThemedText>
+
+      {avgSleepHours != null && (
+        <View style={styles.statChip}>
+          <ThemedText style={styles.statChipLabel}>하루 평균</ThemedText>
+          <ThemedText style={styles.statChipValue}>{formatHoursMinutes(avgSleepHours)}</ThemedText>
+        </View>
+      )}
+
+      <WeekBarChart weekDates={weekDates} todayKey={todayKey} values={values} max={max} barColor={() => SLEEP_BAR_COLOR} />
+
+      {sleepLink && (
+        <View style={styles.statChipRow}>
+          <View style={[styles.statChip, styles.statChipHalf]}>
+            <ThemedText style={styles.statChipLabel}>잘 못 잔 날</ThemedText>
+            <ThemedText style={styles.statChipValueSmall}>{sleepLink.poor_sleep_days}일</ThemedText>
+          </View>
+          <View style={[styles.statChip, styles.statChipHalf]}>
+            <ThemedText style={styles.statChipLabel}>푹 잔 날</ThemedText>
+            <ThemedText style={styles.statChipValueSmall}>{sleepLink.good_sleep_days}일</ThemedText>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function TopSymptomsSection({ symptoms }: { symptoms: SymptomBreakdownRow[] }) {
+  const ranked = symptoms.filter((s) => s.count > 0).slice(0, 5);
+
+  if (ranked.length === 0) {
+    return (
+      <View style={styles.section}>
+        <ThemedText style={styles.sectionTitle}>가장 많이 기록된 증상</ThemedText>
+        <ThemedText style={styles.sectionDescription}>이 기간에 기록된 증상이 없어요.</ThemedText>
+      </View>
+    );
+  }
+
+  const max = Math.max(ranked[0].count, SYMPTOM_BAR_SCALE_FLOOR);
+  return (
+    <View style={styles.section}>
+      <ThemedText style={styles.sectionTitle}>가장 많이 기록된 증상</ThemedText>
+      <ThemedText style={styles.sectionDescription}>이 기간에 남긴 기록을 횟수 순으로 모았어요.</ThemedText>
+      <View style={styles.symptomList}>
+        {ranked.map((row) => (
+          <View key={row.code} style={styles.symptomRow}>
+            <View style={styles.symptomRowHeader}>
+              <ThemedText style={styles.symptomLabel}>
+                {row.emoji} {row.label}
+              </ThemedText>
+              <ThemedText style={styles.symptomCount}>{row.count}회</ThemedText>
+            </View>
+            <View style={styles.symptomBarTrack}>
+              <View style={[styles.symptomBarFill, { width: `${Math.max(6, (row.count / max) * 100)}%` }]} />
+            </View>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function SparseBanner({ daysRecorded }: { daysRecorded: number }) {
+  const remaining = Math.max(0, MIN_DAYS_FOR_FULL_VIEW - daysRecorded);
+  return (
+    <View style={styles.sparseBanner}>
+      <Image source={REPORT_MASCOT_IMAGE} style={styles.sparseMascotImage} contentFit="contain" />
+      <ThemedText style={styles.sparseBannerTitle}>7일 중 {daysRecorded}일 기록</ThemedText>
+      <View style={styles.sparseDotsRow}>
+        {WEEKDAY_LABELS.map((_, index) => (
+          <View key={index} style={[styles.sparseDot, index < daysRecorded && styles.sparseDotFilled]} />
+        ))}
+      </View>
+      {remaining > 0 && (
+        <ThemedText style={styles.sparseBannerText}>{remaining}일 더 채우면 전체 흐름을 볼 수 있어요.</ThemedText>
+      )}
+    </View>
+  );
+}
+
+// 장식용 자리표시 막대 — 실제 수치가 아니라 "기록이 쌓이면 이렇게 채워진다"는 형태만 보여준다.
+const PLACEHOLDER_BAR_RATIOS = [0.3, 0.52, 0.38, 0.64, 0.44, 0.56, 0.34];
+
+function PlaceholderGraphCard({ title, caption }: { title: string; caption: string }) {
+  return (
+    <View style={styles.placeholderCard}>
+      <ThemedText style={styles.placeholderTitle}>{title}</ThemedText>
+      <View style={[styles.barRow, { height: 66 }]}>
+        {PLACEHOLDER_BAR_RATIOS.map((ratio, index) => (
+          <View
+            key={index}
+            style={[styles.bar, { height: BAR_MIN_HEIGHT + ratio * (66 - BAR_MIN_HEIGHT), backgroundColor: BAR_NO_DATA_COLOR }]}
+          />
+        ))}
+      </View>
+      <ThemedText style={styles.placeholderCaption}>{caption}</ThemedText>
+    </View>
+  );
+}
+
+function EmptyReportState({ onLogPress }: { onLogPress: () => void }) {
+  return (
+    <View style={styles.emptyState}>
+      <Image source={REPORT_MASCOT_IMAGE} style={styles.emptyMascotImage} contentFit="contain" />
+      <ThemedText style={styles.emptyText}>기록이 모이면 여기에 최근 1주일 동안의 변화가 그려져요.</ThemedText>
+      <ThemedText style={styles.sectionTitle}>여기에 그려질 내용</ThemedText>
+      <PlaceholderGraphCard title="홍조" caption="증상을 기록하시면 채워져요" />
+      <PlaceholderGraphCard title="수면 시간" caption="잠든 시각과 깬 시각을 남기시면 채워져요" />
+      <WarmButton label="첫 기록 남기기" onPress={onLogPress} />
+    </View>
+  );
+}
 
 export default function ReportScreen() {
   const [report, setReport] = useState<WeeklyReport | null>(null);
   const [logs, setLogs] = useState<SymptomLogEntry[]>([]);
   const [checkIns, setCheckIns] = useState<DailyCheckInEntry[]>([]);
+  const [weekStart, setWeekStart] = useState<string | null>(null);
   const [status, setStatus] = useState<'loading' | 'error' | 'loaded'>('loading');
   const [errorMessage, setErrorMessage] = useState('');
 
   // chat.tsx의 createChatSession().then().catch() 패턴과 동일 — async/await로 쓰면 eslint
   // (react-hooks/set-state-in-effect)가 await 이후의 setState도 effect 본문 동기 호출로 오인해 flag한다.
-  const load = useCallback(() => {
-    getWeeklyReport()
+  const load = useCallback((week?: string) => {
+    getWeeklyReport(week ? { week } : undefined)
       .then((weeklyReport) => {
         const range = { from: weeklyReport.stats.week_start, to: weeklyReport.stats.week_end };
         return Promise.all([listSymptomLogs(range), listCheckIns(range)]).then(([weekLogs, weekCheckIns]) => {
           setReport(weeklyReport);
           setLogs(weekLogs);
           setCheckIns(weekCheckIns);
+          setWeekStart(weeklyReport.stats.week_start);
           setStatus('loaded');
         });
       })
@@ -224,7 +492,17 @@ export default function ReportScreen() {
 
   function handleRetry() {
     setStatus('loading');
-    load();
+    load(weekStart ?? undefined);
+  }
+
+  function handlePrevWeek(currentWeekStart: string) {
+    setStatus('loading');
+    load(addDays(currentWeekStart, -7));
+  }
+
+  function handleNextWeek(currentWeekStart: string) {
+    setStatus('loading');
+    load(addDays(currentWeekStart, 7));
   }
 
   if (status === 'loading') {
@@ -249,202 +527,112 @@ export default function ReportScreen() {
   }
 
   const { stats } = report;
-  const hotFlash = stats.symptoms.find((s) => s.code === 'hot_flash');
-  const hasHotFlashComparison = !!hotFlash && hotFlash.prev_count > 0;
-
   const weekDates = buildWeekDates(stats.week_start);
   const todayKey = kstDateKey(new Date());
+  const thisMonday = currentWeekMonday();
+  const isCurrentWeek = stats.week_start === thisMonday;
+
   const hotFlashDaily = buildDailyHotFlashCounts(logs, weekDates);
-  const sleepDaily = buildDailySleepHours(checkIns, weekDates);
-  const skinDaily = buildDailySkinScores(stats.skin_link, weekDates);
-
   const sleepHours = stats.check_in_averages.sleep_hours;
-  const moodLabel = moodQualitativeLabel(stats.check_in_averages.mood);
 
-  const insightBlocks: { label: string; body: string }[] = [];
-  if (hotFlash) {
-    insightBlocks.push({
-      label: hotFlash.label,
-      body: hotFlash.peak_slot_label
-        ? `이번 주 ${hotFlash.count}회 기록했고, ${hotFlash.peak_slot_label} 시간대에 몰려 있었어요.`
-        : `이번 주 ${hotFlash.count}회 기록했어요.`,
-    });
-  }
-  if (sleepHours != null || moodLabel != null) {
-    const sleepPart = sleepHours != null ? `평균 ${sleepHours}시간 주무셨` : null;
-    const moodPart = moodLabel != null ? `기분은 '${moodLabel}'으로 남기셨어요` : null;
-    const body =
-      sleepPart && moodPart ? `${sleepPart}고, ${moodPart}.` : sleepPart ? `${sleepPart}어요.` : `${moodPart}.`;
-    insightBlocks.push({ label: '수면과 기분', body });
-  }
-  if (stats.skin_link) {
-    insightBlocks.push({
-      label: '피부',
-      body: `얼굴 사진은 ${stats.skin_link.photo_days}일 찍으셨고, 홍조 점수는 평균 ${stats.skin_link.average_redness}점이었어요.`,
-    });
-  }
+  // skin_link는 사진만 있어도 채워지는 별도 출처라, days_recorded/total_logs(증상·체크인 기준)만
+  // 보고 empty로 판정하면 사진만 남긴 주가 "기록 없음"으로 잘못 표시된다.
+  const isEmpty = stats.days_recorded === 0 && stats.total_logs === 0 && !stats.skin_link;
+  const isSparse = !isEmpty && stats.days_recorded < MIN_DAYS_FOR_FULL_VIEW;
 
-  const hotFlashDeltaChip = hasHotFlashComparison ? formatDeltaChip(hotFlash!.delta) : null;
+  const headline = isEmpty
+    ? isCurrentWeek
+      ? '오늘도 나를\n돌아봐요'
+      : '이 기간엔 기록이 없었어요'
+    : isCurrentWeek
+      ? '최근 1주일 동안의\n내 상태'
+      : `${formatShortRange(stats.week_start, stats.week_end)} 기록`;
+
+  const insightLine = !isEmpty ? buildInsightLine(stats) : null;
 
   return (
     <WarmScreen>
       <View style={styles.page}>
+        <WeekNavBar
+          label={weekNavLabel(stats.week_start, thisMonday)}
+          rangeLabel={formatShortRange(stats.week_start, stats.week_end)}
+          onPrev={() => handlePrevWeek(stats.week_start)}
+          onNext={() => handleNextWeek(stats.week_start)}
+          nextDisabled={isCurrentWeek}
+        />
+
         <View style={styles.header}>
           <View style={styles.headerBlob} />
           <View style={styles.headerTextBlock}>
-            <ThemedText style={styles.headerTitle}>이번 주 리포트</ThemedText>
-            <ThemedText style={styles.headerSummary}>{buildHeaderSummary(hotFlash)}</ThemedText>
-          </View>
-        </View>
-
-        <View style={styles.badgeRow}>
-          {hasHotFlashComparison && hotFlash && (
-            <View style={[styles.badge, { backgroundColor: POLARITY_COLORS[
-              hotFlash.delta < 0 ? 'improve' : hotFlash.delta > 0 ? 'caution' : 'neutral'
-            ].bg }]}>
-              <ThemedText
-                style={[
-                  styles.badgeText,
-                  { color: POLARITY_COLORS[hotFlash.delta < 0 ? 'improve' : hotFlash.delta > 0 ? 'caution' : 'neutral'].text },
-                ]}>
-                {hotFlashBadgeText(hotFlash)}
-              </ThemedText>
-            </View>
-          )}
-          <View style={[styles.badge, { backgroundColor: POLARITY_COLORS.neutral.bg }]}>
-            <ThemedText style={[styles.badgeText, { color: POLARITY_COLORS.neutral.text }]}>
-              {stats.days_recorded}일 기록했어요
+            <ThemedText style={styles.headerTitle}>{headline}</ThemedText>
+            <ThemedText style={styles.headerSubtitle}>
+              {formatLongRange(stats.week_start, stats.week_end)} · 7일 중 {stats.days_recorded}일 기록
             </ThemedText>
-          </View>
-          {stats.skin_link && (
-            <View style={[styles.badge, { backgroundColor: POLARITY_COLORS.neutral.bg }]}>
-              <ThemedText style={[styles.badgeText, { color: POLARITY_COLORS.neutral.text }]}>
-                얼굴 사진 {stats.skin_link.photo_days}일
+            {report.showing_other_week && (
+              <ThemedText style={styles.headerNotice}>
+                이번 주는 기록이 없어 최근 기록이 있는 주를 보여드리고 있어요.
               </ThemedText>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.timelineSection}>
-          <ThemedText style={styles.timelineTitle}>한 주의 흐름</ThemedText>
-          <ThemedText style={styles.timelineDescription}>요일별로 기록한 값을 나란히 놓았어요.</ThemedText>
-
-          <View style={styles.timelineRows}>
-            <TimelineRow label="홍조" values={hotFlashDaily} colors={TIMELINE_COLORS.hotFlash} />
-            <TimelineRow label="수면" values={sleepDaily} colors={TIMELINE_COLORS.sleep} />
-            <TimelineRow label="피부" values={skinDaily} colors={TIMELINE_COLORS.skin} />
-
-            <View style={styles.timelineWeekdayRow}>
-              <View style={styles.timelineRowLabelSpacer} />
-              <View style={styles.timelineWeekdayLabels}>
-                {WEEKDAY_LABELS.map((label, index) => (
-                  <ThemedText
-                    key={label}
-                    style={[
-                      styles.timelineWeekdayLabel,
-                      weekDates[index] === todayKey && styles.timelineWeekdayLabelToday,
-                    ]}>
-                    {label}
-                  </ThemedText>
-                ))}
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {insightBlocks.length > 0 && (
-          <View style={styles.insightSection}>
-            <ThemedText style={styles.insightTitle}>이렇게 읽었어요</ThemedText>
-            <View>
-              {insightBlocks.map((block, index) => (
-                <View
-                  key={block.label}
-                  style={[
-                    styles.insightBlock,
-                    index === insightBlocks.length - 1 && styles.insightBlockLast,
-                  ]}>
-                  <ThemedText style={styles.insightLabel}>{block.label}</ThemedText>
-                  <ThemedText style={styles.insightBody}>{block.body}</ThemedText>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        <View style={styles.detailSection}>
-          <ThemedText style={styles.detailTitle}>자세한 수치</ThemedText>
-          <View>
-            <View style={styles.detailRow}>
-              <ThemedText style={styles.detailLabel}>홍조</ThemedText>
-              <View style={styles.detailValueRow}>
-                <ThemedText style={styles.detailValue}>{hotFlash?.count ?? 0}회</ThemedText>
-                {hotFlashDeltaChip && (
-                  <ThemedText
-                    style={[
-                      styles.detailDelta,
-                      { color: POLARITY_COLORS[hotFlash!.delta < 0 ? 'improve' : 'caution'].text },
-                    ]}>
-                    {hotFlashDeltaChip}
-                  </ThemedText>
-                )}
-              </View>
-            </View>
-
-            <View style={styles.detailRow}>
-              <ThemedText style={styles.detailLabel}>평균 수면</ThemedText>
-              <ThemedText style={styles.detailValue}>{sleepHours != null ? `${sleepHours}시간` : '기록 없음'}</ThemedText>
-            </View>
-
-            <View style={styles.detailRow}>
-              <ThemedText style={styles.detailLabel}>평균 기분</ThemedText>
-              <ThemedText style={styles.detailValue}>{moodLabel ?? '기록 없음'}</ThemedText>
-            </View>
-
-            {stats.skin_link && (
-              <View style={[styles.detailRow, styles.detailRowLast]}>
-                <View style={styles.detailLabelStack}>
-                  <ThemedText style={styles.detailLabel}>피부 홍조 점수</ThemedText>
-                  <ThemedText style={styles.detailSubLabel}>얼굴 사진 {stats.skin_link.photo_days}일 평균</ThemedText>
-                </View>
-                <ThemedText style={styles.detailValue}>{stats.skin_link.average_redness}점</ThemedText>
-              </View>
             )}
           </View>
         </View>
 
-        {stats.care_signal.suggested && (
-          <View style={styles.careSignalBlock}>
-            <ThemedText style={styles.careSignalTitle}>의사 선생님과 이야기해 볼 만한 기록이 있어요</ThemedText>
-            <ThemedText style={styles.careSignalBody}>
-              걱정하실 내용은 아니에요. 다음에 병원에 가실 일이 있으면 아래 기록을 보여드리면 도움이 됩니다.
-            </ThemedText>
-            <View style={styles.careReasonList}>
-              {stats.care_signal.reasons.map((reason, index) => {
-                const info = describeCareReason(reason);
-                return (
-                  <View key={reason.code} style={[styles.careReasonRow, index > 0 && styles.careReasonRowDivider]}>
-                    <ThemedText style={styles.careReasonLabel}>{info.title}</ThemedText>
-                    <View style={styles.careReasonValueRow}>
-                      <ThemedText style={styles.careReasonValue}>{info.value}</ThemedText>
-                      <ThemedText style={styles.careReasonThreshold}>{info.threshold}</ThemedText>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-            <ThemedText style={styles.careSignalFootnote}>
-              기준은 일반적인 참고값이며, 넘었다고 해서 이상이 있다는 뜻은 아닙니다.
-            </ThemedText>
-          </View>
-        )}
+        {isEmpty ? (
+          <EmptyReportState onLogPress={() => router.push('/symptom-log')} />
+        ) : (
+          <>
+            {isSparse && <SparseBanner daysRecorded={stats.days_recorded} />}
 
-        {stats.missed_dates.length > 0 && (
-          <View style={styles.fillNote}>
-            <ThemedText style={styles.fillNoteTitle}>기록을 더 채우면 관찰이 정확해져요</ThemedText>
-            <ThemedText style={styles.fillNoteText}>
-              이번 주 {stats.missed_dates.length}일은 기록이 없었어요. 오늘 체크인에서 채워보세요.
-            </ThemedText>
-          </View>
+            {insightLine && (
+              <View style={styles.insightCallout}>
+                <ThemedText style={styles.insightCalloutText}>{insightLine}</ThemedText>
+              </View>
+            )}
+
+            <HotFlashSection
+              hotFlashDaily={hotFlashDaily}
+              weekDates={weekDates}
+              todayKey={todayKey}
+              skinLink={stats.skin_link}
+            />
+
+            <SleepSection
+              checkIns={checkIns}
+              weekDates={weekDates}
+              todayKey={todayKey}
+              avgSleepHours={sleepHours}
+              sleepLink={stats.sleep_link}
+            />
+
+            <TopSymptomsSection symptoms={stats.symptoms} />
+
+            {stats.care_signal.suggested && (
+              <View style={styles.careSignalBlock}>
+                <ThemedText style={styles.careSignalTitle}>의사 선생님과 이야기해 볼 만한 기록이 있어요</ThemedText>
+                <ThemedText style={styles.careSignalBody}>
+                  걱정하실 내용은 아니에요. 다음에 병원에 가실 일이 있으면 아래 기록을 보여드리면 도움이 됩니다.
+                </ThemedText>
+                <View style={styles.careReasonList}>
+                  {stats.care_signal.reasons.map((reason, index) => {
+                    const info = describeCareReason(reason);
+                    return (
+                      <View
+                        key={reason.code}
+                        style={[styles.careReasonRow, index > 0 && styles.careReasonRowDivider]}>
+                        <ThemedText style={styles.careReasonLabel}>{info.title}</ThemedText>
+                        <View style={styles.careReasonValueRow}>
+                          <ThemedText style={styles.careReasonValue}>{info.value}</ThemedText>
+                          <ThemedText style={styles.careReasonThreshold}>{info.threshold}</ThemedText>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+                <ThemedText style={styles.careSignalFootnote}>
+                  기준은 일반적인 참고값이며, 넘었다고 해서 이상이 있다는 뜻은 아닙니다.
+                </ThemedText>
+              </View>
+            )}
+          </>
         )}
 
         <ThemedText style={styles.disclaimer}>
@@ -478,206 +666,329 @@ const styles = StyleSheet.create({
   page: {
     paddingHorizontal: 6,
   },
-  header: {
-    position: 'relative',
-    // WarmScreen.inner의 paddingTop:24에 +22 해서 시안의 상단 46px을 맞춘다.
-    marginTop: 22,
-    marginBottom: 30,
-  },
-  headerBlob: {
-    position: 'absolute',
-    right: -46,
-    top: -46,
-    width: 170,
-    height: 170,
-    borderRadius: 999,
-    opacity: 0.42,
-    ...headerBlobBackground,
-  },
-  headerTextBlock: {
-    gap: 10,
-  },
-  headerTitle: {
-    fontSize: 30,
-    fontWeight: '800',
-    lineHeight: 40.5,
-    color: Warm.textDeep,
-  },
-  headerSummary: {
-    fontSize: 19,
-    fontWeight: '600',
-    lineHeight: 29.45,
-    color: Warm.text,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 38,
-  },
-  badge: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 9,
-  },
-  badgeText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  timelineSection: {
-    marginBottom: 40,
-  },
-  timelineTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: Warm.textDeep,
-    marginBottom: 6,
-  },
-  timelineDescription: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: Warm.text,
-    opacity: 0.65,
-    marginBottom: 18,
-  },
-  timelineRows: {
-    gap: 16,
-  },
-  timelineRow: {
+
+  weekNav: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'space-between',
+    gap: 8,
+    minHeight: 56,
+    padding: 6,
+    borderRadius: 16,
+    backgroundColor: Warm.backgroundSubtle,
+    marginBottom: 22,
   },
-  timelineRowLabel: {
-    width: 44,
-    flexShrink: 0,
+  weekNavButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: Warm.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekNavButtonDisabled: {
+    opacity: 0.4,
+  },
+  weekNavCenter: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  weekNavLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Warm.textDeep,
+  },
+  weekNavRange: {
     fontSize: 13,
-    fontWeight: '600',
     color: Warm.text,
     opacity: 0.7,
   },
-  timelineRowLabelSpacer: {
-    width: 44,
-    flexShrink: 0,
+
+  header: {
+    position: 'relative',
+    marginBottom: 28,
   },
-  timelineBars: {
+  headerBlob: {
+    position: 'absolute',
+    right: -40,
+    top: -30,
+    width: 160,
+    height: 160,
+    borderRadius: 999,
+    opacity: 0.4,
+    ...blobDecorationStyle(Warm.secondary),
+  },
+  headerTextBlock: {
+    gap: 8,
+  },
+  headerTitle: {
+    fontSize: 27,
+    fontWeight: '800',
+    lineHeight: 36.5,
+    color: Warm.textDeep,
+  },
+  headerSubtitle: {
+    fontSize: 15,
+    fontWeight: '500',
+    lineHeight: 22,
+    color: Warm.text,
+    opacity: 0.8,
+  },
+  headerNotice: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: Warm.textSecondary,
+  },
+
+  insightCallout: {
+    borderRadius: 18,
+    padding: 16,
+    backgroundColor: Warm.primarySoft,
+    marginBottom: 30,
+  },
+  insightCalloutText: {
+    fontSize: 16,
+    lineHeight: 24,
+    fontWeight: '500',
+    color: Warm.textDeep,
+  },
+
+  sparseBanner: {
+    borderRadius: 20,
+    padding: 18,
+    backgroundColor: Warm.primarySoft,
+    gap: 12,
+    marginBottom: 30,
+  },
+  sparseMascotImage: {
+    width: 96,
+    height: 96,
+    alignSelf: 'center',
+  },
+  sparseBannerTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Warm.textDeep,
+  },
+  sparseDotsRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  sparseDot: {
     flex: 1,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: 'rgba(15,61,44,0.18)',
+  },
+  sparseDotFilled: {
+    backgroundColor: Warm.primary,
+  },
+  sparseBannerText: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: Warm.textDeep,
+    opacity: 0.85,
+  },
+
+  emptyState: {
+    gap: 16,
+    marginBottom: 12,
+  },
+  emptyMascotImage: {
+    width: 160,
+    height: 160,
+    alignSelf: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    lineHeight: 24,
+    color: Warm.text,
+    marginBottom: 4,
+  },
+  placeholderCard: {
+    borderRadius: 20,
+    padding: 18,
+    backgroundColor: Warm.backgroundSubtle,
+    gap: 12,
+  },
+  placeholderTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Warm.textDeep,
+  },
+  placeholderCaption: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: Warm.text,
+    opacity: 0.7,
+  },
+
+  section: {
+    marginBottom: 36,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 4,
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: Warm.textDeep,
+  },
+  sectionHeaderValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Warm.text,
+    opacity: 0.8,
+  },
+  sectionDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: Warm.text,
+    opacity: 0.7,
+    marginBottom: 16,
+  },
+  sectionFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Warm.border,
+  },
+  sectionFooterText: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: Warm.text,
+    opacity: 0.75,
+  },
+
+  barRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 7,
-    height: TIMELINE_ROW_HEIGHT,
   },
-  timelineBar: {
+  bar: {
     flex: 1,
-    borderRadius: 6,
   },
-  timelineWeekdayRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingTop: 2,
-  },
-  timelineWeekdayLabels: {
-    flex: 1,
+  weekdayRow: {
     flexDirection: 'row',
     gap: 7,
+    marginTop: 8,
   },
-  timelineWeekdayLabel: {
+  weekdayLabel: {
     flex: 1,
     textAlign: 'center',
     fontSize: 12,
     fontWeight: '500',
     color: Warm.text,
-    opacity: 0.55,
+    opacity: 0.7,
   },
-  timelineWeekdayLabelToday: {
+  weekdayLabelToday: {
     fontWeight: '700',
     color: Warm.textDeep,
     opacity: 1,
   },
-  insightSection: {
-    marginBottom: 38,
+  weekdayLabelDim: {
+    opacity: 0.35,
   },
-  insightTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: Warm.textDeep,
-    marginBottom: 14,
-  },
-  insightBlock: {
-    gap: 5,
-    paddingVertical: 16,
-    borderTopWidth: 1,
-    borderTopColor: Warm.border,
-  },
-  insightBlockLast: {
-    borderBottomWidth: 1,
-    borderBottomColor: Warm.border,
-  },
-  insightLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Warm.accentSoft,
-    letterSpacing: 0.28,
-  },
-  insightBody: {
-    fontSize: 16,
-    fontWeight: '400',
-    lineHeight: 26.4,
-    color: Warm.text,
-  },
-  detailSection: {
-    marginBottom: 34,
-  },
-  detailTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: Warm.textDeep,
-    marginBottom: 14,
-  },
-  detailRow: {
+
+  skinScoreChip: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
-    minHeight: 56,
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: Warm.border,
+    marginTop: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: Warm.backgroundSubtle,
   },
-  detailRowLast: {
-    borderBottomWidth: 1,
-    borderBottomColor: Warm.border,
-  },
-  detailLabelStack: {
-    gap: 2,
-  },
-  detailLabel: {
-    fontSize: 16,
+  skinScoreChipLabel: {
+    fontSize: 13,
     fontWeight: '500',
     color: Warm.text,
+    opacity: 0.75,
   },
-  detailSubLabel: {
-    fontSize: 13,
-    color: Warm.text,
-    opacity: 0.6,
-  },
-  detailValueRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 8,
-  },
-  detailValue: {
-    fontSize: 18,
+  skinScoreChipValue: {
+    fontSize: 15,
     fontWeight: '700',
-    lineHeight: 21.6,
     color: Warm.textDeep,
   },
-  detailDelta: {
-    fontSize: 13,
-    fontWeight: '500',
-    lineHeight: 15.6,
+
+  statChip: {
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: Warm.backgroundSubtle,
+    gap: 4,
+    marginBottom: 14,
   },
+  statChipRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
+  },
+  statChipHalf: {
+    flex: 1,
+    marginBottom: 0,
+  },
+  statChipLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Warm.text,
+    opacity: 0.8,
+  },
+  statChipValue: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: Warm.textDeep,
+  },
+  statChipValueSmall: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Warm.textDeep,
+  },
+
+  symptomList: {
+    gap: 14,
+  },
+  symptomRow: {
+    gap: 7,
+  },
+  symptomRowHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  symptomLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Warm.textDeep,
+  },
+  symptomCount: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Warm.text,
+    opacity: 0.8,
+  },
+  symptomBarTrack: {
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: 'rgba(46,42,36,0.08)',
+  },
+  symptomBarFill: {
+    height: '100%',
+    borderRadius: 6,
+    backgroundColor: Warm.accentSoft,
+  },
+
   careSignalBlock: {
     backgroundColor: '#F0F2E8',
     borderRadius: 22,
@@ -740,23 +1051,7 @@ const styles = StyleSheet.create({
     color: Warm.text,
     opacity: 0.62,
   },
-  fillNote: {
-    backgroundColor: Warm.background,
-    borderRadius: 20,
-    padding: 18,
-    gap: 6,
-    marginBottom: 24,
-  },
-  fillNoteTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Warm.textDeep,
-  },
-  fillNoteText: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: Warm.text,
-  },
+
   disclaimer: {
     fontSize: 14,
     lineHeight: 20,
