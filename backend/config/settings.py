@@ -214,8 +214,11 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = os.environ.get(
     'CORS_ALLOWED_ORIGINS', 'http://localhost:8081,http://localhost:19006'
 ).split(',')
-# Vercel은 배포마다(프리뷰 포함) 서브도메인이 달라져서 정확한 오리진을 미리 알 수 없어 정규식으로 허용한다.
-CORS_ALLOWED_ORIGIN_REGEXES = [r'^https://.*\.vercel\.app$']
+# Vercel/Netlify는 배포마다(프리뷰 포함) 서브도메인이 달라져서 정확한 오리진을 미리 알 수 없어 정규식으로 허용한다.
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r'^https://.*\.vercel\.app$',
+    r'^https://.*\.netlify\.app$',
+]
 
 
 # Email
