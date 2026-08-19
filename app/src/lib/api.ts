@@ -358,16 +358,30 @@ export async function logout(): Promise<void> {
 
 // ---- 증상·주간 리포트 ----
 
+export type SymptomTypeSummary = {
+  id: number;
+  code: string;
+  label: string;
+  category: string;
+  emoji: string;
+  order: number;
+};
+
 export type SymptomLogEntry = {
   id: number;
   symptom_type: number;
-  symptom_type_detail: { id: number; code: string; label: string; category: string; emoji: string; order: number };
+  symptom_type_detail: SymptomTypeSummary;
   severity: 1 | 2 | 3;
   occurred_at: string;
   memo: string;
   source: 'manual' | 'chat' | 'backfill' | 'seed';
   created_at: string;
 };
+
+/** 앱 버튼 목록 — GET /api/symptoms/types/ (is_active만 내려온다). */
+export function listSymptomTypes() {
+  return request<SymptomTypeSummary[]>('/api/symptoms/types/');
+}
 
 export type SymptomBreakdownRow = {
   code: string;
@@ -470,6 +484,25 @@ export function listSymptomLogs(range: { from: string; to: string }) {
   return request<SymptomLogEntry[]>(`/api/symptoms/logs/?${params.toString()}`);
 }
 
+/** 원터치 기록 — occurred_at을 생략하면 서버가 지금 시각을 채운다(model default=timezone.now). */
+export function createSymptomLog(payload: { symptom_type: number; severity: 1 | 2 | 3 }) {
+  return request<SymptomLogEntry>('/api/symptoms/logs/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+/** SymptomLogDetailView는 Retrieve+Destroy만 있어 수정(PATCH)이 없다 — 심각도를 바꿀 때도
+ * 이 함수로 기존 기록을 지우고 createSymptomLog로 새로 만든다.
+ * deleteReminder와 동일한 이유로 authorizedFetch를 직접 쓴다(204 No Content). */
+export async function deleteSymptomLog(logId: number): Promise<void> {
+  const response = await authorizedFetch(`/api/symptoms/logs/${logId}/`, { method: 'DELETE' });
+  if (!response.ok) {
+    throw await toApiError(response);
+  }
+}
+
 export type DailyCheckInEntry = {
   id: number;
   date: string;
@@ -488,4 +521,25 @@ export type DailyCheckInEntry = {
 export function listCheckIns(range: { from: string; to: string }) {
   const params = new URLSearchParams({ from: range.from, to: range.to });
   return request<DailyCheckInEntry[]>(`/api/symptoms/checkins/?${params.toString()}`);
+}
+
+/** TodayCheckInView의 GET/PUT 공통 응답 — 아직 체크인이 없어도 404가 아니라 completed:false로 200을 준다. */
+export type TodayCheckInResponse = {
+  date: string;
+  completed: boolean;
+  check_in: DailyCheckInEntry | null;
+};
+
+export function getTodayCheckIn() {
+  return request<TodayCheckInResponse>('/api/symptoms/checkins/today/');
+}
+
+/** 필수 필드(수면·기분)만 보내도 된다 — fatigue/stress 등 나머지는 serializer가 required=False라
+ * 요청에 없으면 validated_data에서 빠지고, update_or_create가 defaults에 없는 필드는 건드리지 않는다. */
+export function saveTodayCheckIn(payload: { sleep_quality: 1 | 2 | 3 | 4 | 5; mood: 1 | 2 | 3 | 4 | 5 }) {
+  return request<TodayCheckInResponse>('/api/symptoms/checkins/today/', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
 }
