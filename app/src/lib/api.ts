@@ -589,3 +589,37 @@ export function saveTodayCheckIn(payload: { sleep_quality: 1 | 2 | 3 | 4 | 5; mo
     body: JSON.stringify(payload),
   });
 }
+
+/** 수면 등 일부 필드만 부분 저장한다(DailyCheckInPatchSerializer) — mood를 보내지 않으면 저녁
+ * 체크인(mood 기준 완료 여부)은 그대로 유지된다. 홈의 수면 시간 입력 전용. */
+export function patchTodayCheckIn(payload: {
+  sleep_hours?: number;
+  sleep_quality?: 1 | 2 | 3 | 4 | 5;
+  memo?: string;
+}) {
+  return request<TodayCheckInResponse>('/api/symptoms/checkins/today/', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+/** 홈 "오늘의 기록" 통합 조회 — 증상/수면/저녁 체크인 진행 상황을 한 번에 준다.
+ * 체크인 완료 = mood 존재 여부, 수면 완료 = sleep_hours 존재 여부로 백엔드가 서로 다르게 정의한다
+ * (views.py TodaySummaryView 참고) — 프론트에서 이 기준을 다시 판단하지 않는다. */
+export type TodaySummary = {
+  date: string;
+  symptom: { completed: boolean; count: number };
+  sleep: { completed: boolean; sleep_hours: number | null };
+  checkin: { completed: boolean; mood: 1 | 2 | 3 | 4 | 5 | null };
+};
+
+export function getTodaySummary() {
+  return request<TodaySummary>('/api/symptoms/today-summary/');
+}
+
+/** 오늘의 기록 카드 중 얼굴 사진 상태는 today-summary에 아직 없어(백엔드 범위 밖), 기존 목록
+ * 엔드포인트로 최근 촬영일을 프론트에서 직접 계산한다. */
+export function listFaceAnalyses() {
+  return request<FaceAnalysisResult[]>('/api/face-analysis/');
+}
