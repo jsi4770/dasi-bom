@@ -123,6 +123,18 @@ async function request<T>(path: string, init?: RequestInit, extras?: RequestExtr
   return response.json() as Promise<T>;
 }
 
+/** 아직 저장된 값이 없어 404를 정상 상태로 취급해야 하는 GET 전용 — 그 외 에러는 그대로 던진다. */
+async function requestOrNull<T>(path: string): Promise<T | null> {
+  try {
+    return await request<T>(path);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 export function createChatSession() {
   return request<ChatSession>('/api/chatbot/sessions/', { method: 'POST' });
 }
@@ -599,6 +611,56 @@ export function patchTodayCheckIn(payload: {
 }) {
   return request<TodayCheckInResponse>('/api/symptoms/checkins/today/', {
     method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+// ---- 온보딩: 완경 단계 설문 · 정보 활용 동의 ----
+
+/** MENOPAUSE_SURVEY_OPTIONS(mock-data.ts)의 배열 순서와 그대로 대응 — 순서를 바꾸면 이 타입도 같이 바꿔야 한다. */
+export type MenopauseSurveyChoice = 0 | 1 | 2 | 3;
+
+export type MenopauseStage = 'peri' | 'menopause' | 'post' | 'unknown';
+
+export type MenopauseSurvey = {
+  choice: MenopauseSurveyChoice;
+  stage: MenopauseStage;
+  answered_at: string;
+};
+
+/** 아직 응답한 적 없는 유저는 404 → null(정상 초기 상태)로 내려온다. */
+export function getMenopauseSurvey() {
+  return requestOrNull<MenopauseSurvey>('/api/users/menopause-survey/');
+}
+
+/** 유저당 응답 하나뿐이라 재설문은 서버가 덮어쓴다(update_or_create). */
+export function saveMenopauseSurvey(choice: MenopauseSurveyChoice) {
+  return request<MenopauseSurvey>('/api/users/menopause-survey/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ choice }),
+  });
+}
+
+export type UserConsent = {
+  face_analysis_consent: boolean;
+  face_analysis_consented_at: string | null;
+  health_data_consent: boolean;
+  health_data_consented_at: string | null;
+};
+
+export type UserConsentPayload = Partial<Pick<UserConsent, 'face_analysis_consent' | 'health_data_consent'>>;
+
+/** 아직 저장된 동의 기록이 없는 유저는 404 → null(정상 초기 상태, 두 항목 모두 미동의로 취급)로 내려온다. */
+export function getUserConsent() {
+  return requestOrNull<UserConsent>('/api/users/consent/');
+}
+
+/** 보내지 않은 필드는 기존 값을 유지한다(부분 저장) — 항목별로 따로 호출해도 된다. */
+export function saveUserConsent(payload: UserConsentPayload) {
+  return request<UserConsent>('/api/users/consent/', {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });

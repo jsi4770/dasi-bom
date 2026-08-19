@@ -8,10 +8,29 @@ import { WarmButton } from '@/components/warm/warm-button';
 import { WarmHeader } from '@/components/warm/warm-header';
 import { WarmScreen } from '@/components/warm/warm-screen';
 import { MENOPAUSE_SURVEY_OPTIONS } from '@/constants/mock-data';
-import { blobDecorationStyle, Warm } from '@/constants/theme';
+import { blobDecorationStyle, SeverityColors, Warm } from '@/constants/theme';
+import { ApiError, saveMenopauseSurvey, type MenopauseSurveyChoice } from '@/lib/api';
 
 export default function OnboardingSurveyScreen() {
   const [choice, setChoice] = useState<number | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [errorText, setErrorText] = useState<string | null>(null);
+
+  async function handleSubmit() {
+    if (choice === null || isSaving) return;
+    setIsSaving(true);
+    setErrorText(null);
+    try {
+      const result = await saveMenopauseSurvey(choice as MenopauseSurveyChoice);
+      router.push({ pathname: '/onboarding/survey-result', params: { stage: result.stage } });
+    } catch (error) {
+      setErrorText(
+        error instanceof ApiError ? error.message : '설문 저장에 실패했어요. 다시 시도해주세요.'
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   return (
     <WarmScreen header={<WarmHeader title="완경 단계 설문" variant="minimal" onBack={() => router.back()} />}>
@@ -55,11 +74,14 @@ export default function OnboardingSurveyScreen() {
         어떤 답을 선택해도 앱 이용에 제한이 없어요
       </ThemedText>
 
+      {errorText && <ThemedText style={styles.error}>{errorText}</ThemedText>}
+
       <View style={styles.spacer} />
 
       <WarmButton
-        label="결과 확인하기"
-        onPress={() => router.push('/onboarding/survey-result')}
+        label={isSaving ? '저장하는 중...' : '결과 확인하기'}
+        onPress={handleSubmit}
+        style={choice === null || isSaving ? styles.buttonDisabled : undefined}
       />
       <WarmButton label="지금은 건너뛸게요" variant="text" onPress={() => router.push('/onboarding/consent')} />
     </WarmScreen>
@@ -134,6 +156,15 @@ const styles = StyleSheet.create({
   },
   centerText: {
     textAlign: 'center',
+  },
+  error: {
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    color: SeverityColors.severe.fill,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   spacer: {
     flex: 1,
