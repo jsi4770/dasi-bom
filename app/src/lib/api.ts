@@ -511,6 +511,9 @@ export type WeeklyReport = {
   summary_text: string;
   generated_at: string;
   summary_source: 'ai' | 'cached' | 'template';
+  /** week 파라미터 없이 요청했는데 이번 주가 비어 있어 기록이 남은 최근 주로 대신 보여주는 중이면 true
+   * (views.py WeeklyReportView 참고). 이미 내려오던 필드인데 타입에 빠져 있었다. */
+  showing_other_week: boolean;
 };
 
 export function getWeeklyReport(opts?: { week?: string; refresh?: boolean }) {
