@@ -13,8 +13,10 @@ from pywebpush import WebPushException
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from apps.symptoms.models import DailyCheckIn
+
 from .models import MindfulnessSession, PushSubscription, Reminder, ReminderCompletion
-from .services import get_due_reminders, send_reminder_push
+from .services import get_checkin_reminder_targets, get_due_reminders, send_reminder_push
 
 
 class ReminderApiTestCase(APITestCase):
@@ -666,3 +668,99 @@ class SendDueRemindersCommandTests(TestCase):
 
         self.assertEqual(mock_webpush.call_count, 2)
         self.assertIn('발송 완료 1건, 실패 1건, 만료 정리 0건', out.getvalue())
+
+
+class CheckinReminderTests(TestCase):
+    """services.get_checkin_reminder_targets() 판별 로직 검증. HTTP 없이 함수 직접 호출."""
+
+    def setUp(self):
+        self.today = timezone.localdate()
+        self.user = get_user_model().objects.create_user(username='chasj', password='pw')
+        self.subscription = PushSubscription.objects.create(
+            user=self.user, endpoint='https://fcm.googleapis.com/fcm/send/checkin-1',
+            p256dh='p256dh', auth='auth',
+        )
+
+    def test_includes_user_without_todays_checkin(self):
+        targets = get_checkin_reminder_targets(today=self.today)
+
+        self.assertEqual(len(targets), 1)
+        self.assertEqual(targets[0]['user'], self.user)
+        self.assertEqual(targets[0]['subscriptions'], [self.subscription])
+
+    def test_excludes_user_with_todays_checkin(self):
+        DailyCheckIn.objects.create(user=self.user, date=self.today, sleep_quality=3, mood=3)
+
+        targets = get_checkin_reminder_targets(today=self.today)
+
+        self.assertEqual(targets, [])
+
+    def test_includes_user_whose_only_checkin_was_yesterday(self):
+        DailyCheckIn.objects.create(
+            user=self.user, date=self.today - timedelta(days=1), sleep_quality=3, mood=3,
+        )
+
+        targets = get_checkin_reminder_targets(today=self.today)
+
+        self.assertEqual(len(targets), 1)
+        self.assertEqual(targets[0]['user'], self.user)
+
+    def test_excludes_user_without_subscription(self):
+        self.subscription.delete()
+
+        targets = get_checkin_reminder_targets(today=self.today)
+
+        self.assertEqual(targets, [])
+
+
+class CheckinReminderCommandTests(TestCase):
+    AT_21_00_UTC = '2026-08-16 12:00:00'      # Asia/Seoul 기준 21:00
+    BEFORE_21_00_UTC = '2026-08-16 11:55:00'  # Asia/Seoul 기준 20:55
+    AFTER_21_00_UTC = '2026-08-16 12:05:00'   # Asia/Seoul 기준 21:05
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username='chasj', password='pw')
+        self.subscription = PushSubscription.objects.create(
+            user=self.user, endpoint='https://fcm.googleapis.com/fcm/send/checkin-1',
+            p256dh='p256dh', auth='auth',
+        )
+
+    @freeze_time(AT_21_00_UTC)
+    @override_settings(VAPID_PUBLIC_KEY='', VAPID_PRIVATE_KEY='', VAPID_CLAIMS_EMAIL='')
+    @patch('apps.notifications.services.webpush')
+    def test_dry_run_at_21_00_prints_target_without_calling_webpush(self, mock_webpush):
+        out = io.StringIO()
+        call_command('send_due_reminders', '--dry-run', stdout=out)
+
+        mock_webpush.assert_not_called()
+        self.assertIn('[체크인 알림] 발송 대상 1명', out.getvalue())
+
+    @freeze_time(AT_21_00_UTC)
+    @override_settings(VAPID_PUBLIC_KEY='pub', VAPID_PRIVATE_KEY='priv', VAPID_CLAIMS_EMAIL='ops@example.com')
+    @patch('apps.notifications.services.webpush')
+    def test_sends_checkin_reminder_at_21_00(self, mock_webpush):
+        out = io.StringIO()
+        call_command('send_due_reminders', stdout=out)
+
+        mock_webpush.assert_called_once()
+        self.assertIn('[체크인 알림] 발송 완료 1건, 실패 0건, 만료 정리 0건', out.getvalue())
+
+    @freeze_time(BEFORE_21_00_UTC)
+    @override_settings(VAPID_PUBLIC_KEY='pub', VAPID_PRIVATE_KEY='priv', VAPID_CLAIMS_EMAIL='ops@example.com')
+    @patch('apps.notifications.services.webpush')
+    def test_does_not_send_checkin_reminder_before_21_00(self, mock_webpush):
+        out = io.StringIO()
+        call_command('send_due_reminders', stdout=out)
+
+        mock_webpush.assert_not_called()
+        self.assertNotIn('체크인 알림', out.getvalue())
+
+    @freeze_time(AFTER_21_00_UTC)
+    @override_settings(VAPID_PUBLIC_KEY='pub', VAPID_PRIVATE_KEY='priv', VAPID_CLAIMS_EMAIL='ops@example.com')
+    @patch('apps.notifications.services.webpush')
+    def test_does_not_send_checkin_reminder_after_21_00(self, mock_webpush):
+        out = io.StringIO()
+        call_command('send_due_reminders', stdout=out)
+
+        mock_webpush.assert_not_called()
+        self.assertNotIn('체크인 알림', out.getvalue())
