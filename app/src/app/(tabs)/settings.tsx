@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import Constants from 'expo-constants';
 import { router, useFocusEffect } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
@@ -7,6 +8,7 @@ import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-
 import { ThemedText } from '@/components/themed-text';
 import { WarmBottomSheet } from '@/components/warm/warm-bottom-sheet';
 import { WarmButton } from '@/components/warm/warm-button';
+import { WarmCard } from '@/components/warm/warm-card';
 import { WarmInfoNote } from '@/components/warm/warm-info-note';
 import { WarmScreen } from '@/components/warm/warm-screen';
 import { blobDecorationStyle, Warm } from '@/constants/theme';
@@ -51,6 +53,10 @@ function ChevronRight() {
     />
   );
 }
+
+// 시안(다시봄 리뉴얼 설정.dc.html)이 로그아웃 시트에만 쓰는 mascot-hello — 온보딩 첫 화면과
+// 같은 "인사하는 봄이" 이미지라 새 에셋 없이 그대로 재사용한다.
+const LOGOUT_MASCOT_IMAGE = require('@/assets/images/onboarding/hello.png');
 
 function summarizeReminders(
   reminders: TodayReminder[] | null,
@@ -173,11 +179,11 @@ export default function SettingsScreen() {
 
       <View style={styles.section}>
         <ThemedText style={styles.sectionTitle}>알림·루틴</ThemedText>
-        <View>
+        <WarmCard style={styles.cardGroup}>
           <Pressable
             onPress={() => openReminders('medication')}
             accessibilityRole="button"
-            style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+            style={({ pressed }) => [styles.cardRow, pressed && styles.pressed]}>
             <View style={styles.rowTextBlock}>
               <ThemedText style={styles.rowLabel}>복약·영양제</ThemedText>
               <ThemedText style={styles.rowValue}>
@@ -189,7 +195,7 @@ export default function SettingsScreen() {
           <Pressable
             onPress={() => openReminders('mindfulness')}
             accessibilityRole="button"
-            style={({ pressed }) => [styles.row, styles.rowLast, pressed && styles.pressed]}>
+            style={({ pressed }) => [styles.cardRow, styles.cardRowDivider, pressed && styles.pressed]}>
             <View style={styles.rowTextBlock}>
               <ThemedText style={styles.rowLabel}>명상·스트레칭</ThemedText>
               <ThemedText style={styles.rowValue}>
@@ -198,7 +204,7 @@ export default function SettingsScreen() {
             </View>
             <ChevronRight />
           </Pressable>
-        </View>
+        </WarmCard>
         <ThemedText style={styles.helperNote}>
           각 항목을 누르시면 시간을 바꾸거나 새로 추가하실 수 있어요.
         </ThemedText>
@@ -207,31 +213,33 @@ export default function SettingsScreen() {
       {Platform.OS === 'web' && (
         <View style={styles.section}>
           <ThemedText style={styles.sectionTitle}>브라우저 알림</ThemedText>
-          <View style={[styles.row, styles.rowLast]}>
-            <View style={styles.rowTextBlock}>
-              <ThemedText style={styles.rowLabel}>리마인더 알림 받기</ThemedText>
-              <ThemedText style={styles.rowValue}>{pushStatusLabel(pushState)}</ThemedText>
+          <WarmCard style={styles.cardGroup}>
+            <View style={styles.cardRow}>
+              <View style={styles.rowTextBlock}>
+                <ThemedText style={styles.rowLabel}>리마인더 알림 받기</ThemedText>
+                <ThemedText style={styles.rowValue}>{pushStatusLabel(pushState)}</ThemedText>
+              </View>
+              {pushState === 'processing' ? (
+                <ActivityIndicator color={Warm.primary} />
+              ) : pushState === 'on' || pushState === 'off' ? (
+                <Pressable
+                  onPress={handleTogglePush}
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked: pushState === 'on' }}
+                  accessibilityLabel="리마인더 알림 받기"
+                  style={({ pressed }) => [
+                    styles.pushToggle,
+                    pushState === 'on' && styles.pushToggleOn,
+                    pressed && styles.pressed,
+                  ]}>
+                  <ThemedText
+                    style={[styles.pushToggleLabel, pushState === 'on' && styles.pushToggleLabelOn]}>
+                    {pushState === 'on' ? '켜짐' : '꺼짐'}
+                  </ThemedText>
+                </Pressable>
+              ) : null}
             </View>
-            {pushState === 'processing' ? (
-              <ActivityIndicator color={Warm.primary} />
-            ) : pushState === 'on' || pushState === 'off' ? (
-              <Pressable
-                onPress={handleTogglePush}
-                accessibilityRole="switch"
-                accessibilityState={{ checked: pushState === 'on' }}
-                accessibilityLabel="리마인더 알림 받기"
-                style={({ pressed }) => [
-                  styles.pushToggle,
-                  pushState === 'on' && styles.pushToggleOn,
-                  pressed && styles.pressed,
-                ]}>
-                <ThemedText
-                  style={[styles.pushToggleLabel, pushState === 'on' && styles.pushToggleLabelOn]}>
-                  {pushState === 'on' ? '켜짐' : '꺼짐'}
-                </ThemedText>
-              </Pressable>
-            ) : null}
-          </View>
+          </WarmCard>
           <ThemedText style={styles.helperNote}>
             {pushState === 'denied'
               ? '브라우저 주소창 옆 자물쇠 아이콘에서 알림 권한을 허용하면 다시 켤 수 있어요.'
@@ -243,28 +251,24 @@ export default function SettingsScreen() {
 
       <View style={styles.section}>
         <ThemedText style={styles.sectionTitle}>계정</ThemedText>
-        <View style={[styles.row, styles.rowLast]}>
-          <View style={styles.rowTextBlock}>
-            <ThemedText style={styles.rowLabel}>로그인 계정</ThemedText>
-            <ThemedText style={styles.rowValue}>{accountLabel}</ThemedText>
-          </View>
-        </View>
+        <WarmCard style={styles.accountCard}>
+          <ThemedText style={styles.rowLabel}>로그인 계정</ThemedText>
+          <ThemedText style={styles.rowValue}>{accountLabel}</ThemedText>
+        </WarmCard>
       </View>
 
       <View style={styles.section}>
         <ThemedText style={styles.sectionTitle}>앱 정보</ThemedText>
-        <View style={styles.inlineRow}>
-          <ThemedText style={styles.rowLabel}>버전</ThemedText>
-          <ThemedText style={styles.rowValue}>{version}</ThemedText>
-        </View>
-        <View style={[styles.row, styles.rowLast]}>
-          <View style={styles.rowTextBlock}>
-            <ThemedText style={styles.rowLabel}>이용약관 · 개인정보 처리방침</ThemedText>
-            <ThemedText style={styles.rowValue}>기록을 어떻게 보관하는지 적어두었어요</ThemedText>
+        <WarmCard style={styles.cardGroup}>
+          <View style={styles.rowSingle}>
+            <ThemedText style={styles.rowLabel}>버전</ThemedText>
+            <ThemedText style={styles.rowValue}>{version}</ThemedText>
           </View>
-        </View>
+        </WarmCard>
 
-        <WarmInfoNote text="다시-봄의 기록은 참고용이며, 의료적 진단이나 처방을 대신하지 않아요." />
+        <View style={styles.infoNoteSpacing}>
+          <WarmInfoNote text="다시-봄의 기록은 참고용이며, 의료적 진단이나 처방을 대신하지 않아요." />
+        </View>
       </View>
 
       <View style={styles.spacer} />
@@ -276,18 +280,23 @@ export default function SettingsScreen() {
         <ThemedText style={styles.logoutLinkText}>로그아웃</ThemedText>
       </Pressable>
 
-      <WarmBottomSheet
-        visible={logoutSheetVisible}
-        onClose={() => setLogoutSheetVisible(false)}
-        title="로그아웃">
-        <ThemedText style={styles.logoutSheetText}>
-          지금까지의 기록은 계정에 그대로 남아 있어요. 다시 로그인하시면 이어서 보실 수 있습니다.
-        </ThemedText>
-        <WarmButton
-          label={loggingOut ? '로그아웃 중…' : '로그아웃'}
-          onPress={handleLogout}
-        />
-        <WarmButton label="돌아가기" variant="secondary" onPress={() => setLogoutSheetVisible(false)} />
+      <WarmBottomSheet visible={logoutSheetVisible} onClose={() => setLogoutSheetVisible(false)} title="">
+        <View style={styles.logoutIntro}>
+          <View style={styles.logoutMascotWrap}>
+            <Image source={LOGOUT_MASCOT_IMAGE} style={styles.logoutMascotImage} contentFit="cover" />
+          </View>
+          <ThemedText style={styles.logoutSheetTitle}>로그아웃 할까요?</ThemedText>
+          <ThemedText style={styles.logoutSheetText}>
+            지금까지의 기록은 계정에 그대로 남아 있어요. 다시 로그인하시면 이어서 보실 수 있습니다.
+          </ThemedText>
+        </View>
+        <View style={styles.logoutButtonGroup}>
+          <WarmButton
+            label={loggingOut ? '로그아웃 중…' : '로그아웃'}
+            onPress={handleLogout}
+          />
+          <WarmButton label="돌아가기" variant="secondary" onPress={() => setLogoutSheetVisible(false)} />
+        </View>
       </WarmBottomSheet>
     </WarmScreen>
   );
@@ -325,32 +334,38 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   sectionTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
     color: Warm.textDeep,
-    marginBottom: 8,
+    marginBottom: 12,
   },
-  row: {
+  // 시안(다시봄 리뉴얼 설정.dc.html)의 "구분선 목록 → 라운드 카드 그룹" 변경 — WarmCard를 목록
+  // 컨테이너로 쓰고, 항목 사이는 카드 안쪽 옅은 구분선(cardRowDivider)으로만 나눈다.
+  cardGroup: {
+    paddingHorizontal: 18,
+    paddingVertical: 4,
+    gap: 0,
+  },
+  cardRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    minHeight: 68,
-    paddingVertical: 12,
+    minHeight: 80,
+    paddingVertical: 14,
+  },
+  cardRowDivider: {
     borderTopWidth: 1,
-    borderTopColor: Warm.border,
+    borderTopColor: 'rgba(46, 42, 36, 0.1)',
   },
-  rowLast: {
-    borderBottomWidth: 1,
-    borderBottomColor: Warm.border,
-  },
-  inlineRow: {
+  rowSingle: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 56,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: Warm.border,
+    minHeight: 64,
+    paddingVertical: 12,
+  },
+  accountCard: {
+    gap: 4,
   },
   rowTextBlock: {
     flex: 1,
@@ -358,8 +373,8 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   rowLabel: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
     color: Warm.textDeep,
   },
   rowValue: {
@@ -404,6 +419,9 @@ const styles = StyleSheet.create({
     color: Warm.secondaryStrong,
     marginTop: 8,
   },
+  infoNoteSpacing: {
+    marginTop: 16,
+  },
   spacer: {
     flex: 1,
     minHeight: 24,
@@ -413,8 +431,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 56,
     paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: Warm.border,
   },
   logoutLinkText: {
     fontSize: 16,
@@ -422,10 +438,39 @@ const styles = StyleSheet.create({
     color: Warm.textDeep,
     textDecorationLine: 'underline',
   },
+  logoutIntro: {
+    alignItems: 'center',
+    gap: 10,
+  },
+  // chat.tsx의 headerAvatar와 동일한 원형 아바타 컨벤션(Warm.card 배경 + 올리브 톤 테두리).
+  logoutMascotWrap: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    overflow: 'hidden',
+    backgroundColor: Warm.card,
+    borderWidth: 1.5,
+    borderColor: 'rgba(131, 153, 88, 0.45)',
+    marginBottom: 4,
+  },
+  logoutMascotImage: {
+    width: '100%',
+    height: '100%',
+  },
+  logoutSheetTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: Warm.textDeep,
+    textAlign: 'center',
+  },
   logoutSheetText: {
     fontSize: 15,
-    lineHeight: 23,
+    lineHeight: 22,
     color: Warm.text,
     opacity: 0.85,
+    textAlign: 'center',
+  },
+  logoutButtonGroup: {
+    gap: 10,
   },
 });
