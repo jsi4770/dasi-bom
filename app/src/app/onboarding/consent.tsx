@@ -1,5 +1,5 @@
 import { SymbolView } from 'expo-symbols';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams, type Href } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
@@ -16,10 +16,6 @@ import { ApiError, saveUserConsent, type UserConsentPayload } from '@/lib/api';
 // (얼굴 사진 / 건강 데이터)뿐이고 둘 다 선택 항목이라, 시안 메모대로 "전체 동의 / 개별 동의 +
 // 동의 없이 시작하기"로 동의 여부를 드러내는 구조로 구현했다. 동의 상태는 GET/POST
 // /api/users/consent/ 로 저장·조회한다 — 저장된 기록이 없는 유저는 404 → 초기 상태(둘 다 미동의)로 취급.
-function finishOnboarding() {
-  // 온보딩 스택을 지우고 홈 탭으로 진입 — 뒤로가기로 온보딩에 못 돌아오게 replace 사용
-  router.replace('/');
-}
 
 function ConsentCheckbox({ checked }: { checked: boolean }) {
   return (
@@ -36,6 +32,11 @@ function ConsentCheckbox({ checked }: { checked: boolean }) {
 }
 
 export default function OnboardingConsentScreen() {
+  // 얼굴 분석 등 다른 화면이 동의 차단 팝업에서 이 화면으로 들여보낼 때 붙이는 파라미터 —
+  // 저장 후에는 홈이 아니라 원래 가려던 곳으로 이어서 이동시킨다. 쿼리 파라미터라 컴파일
+  // 시점엔 어떤 경로인지 알 수 없어(typedRoutes) 실제 존재하는 경로만 들어온다는 전제로 캐스팅한다.
+  const { redirectTo } = useLocalSearchParams<{ redirectTo?: string }>();
+
   const { consent, loading: consentLoading, error: consentError, refetch } = useUserConsent();
 
   const [faceConsent, setFaceConsent] = useState(false);
@@ -62,12 +63,16 @@ export default function OnboardingConsentScreen() {
     setHealthConsent(next);
   }
 
+  function goNext() {
+    router.replace((redirectTo ?? '/') as Href);
+  }
+
   async function persistConsent(payload: UserConsentPayload) {
     setIsSaving(true);
     setSaveError(null);
     try {
       await saveUserConsent(payload);
-      finishOnboarding();
+      goNext();
     } catch (error) {
       setSaveError(error instanceof ApiError ? error.message : '저장에 실패했어요. 다시 시도해주세요.');
     } finally {
