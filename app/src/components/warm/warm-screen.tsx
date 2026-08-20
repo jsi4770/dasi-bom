@@ -27,8 +27,13 @@ export function WarmScreen({
     web: { paddingBottom: 32 },
   });
 
+  // 안드로이드는 기존 상태바 처리 그대로 유지 — iOS(PWA 포함)/일반 웹만 노치·다이나믹 아일랜드를
+  // 피하도록 상단 세이프에어리어만큼 추가 여백을 준다. 일반 웹 브라우저는 insets.top이 0이라 기존
+  // 레이아웃과 동일하게 보인다.
+  const topInset = Platform.OS === 'android' ? 0 : insets.top;
+
   return (
-    <View style={[styles.root, { backgroundColor }]}>
+    <View style={[styles.root, { backgroundColor, paddingTop: topInset }]}>
       {header}
       {scrollable ? (
         <ScrollView
