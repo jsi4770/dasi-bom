@@ -11,6 +11,7 @@ import { WarmTextInput } from '@/components/warm/warm-text-input';
 import { blobDecorationStyle, SeverityColors, Warm } from '@/constants/theme';
 import { ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { enablePushNotifications, isPushSupported } from '@/lib/push';
 
 function ConsentCheckbox({ checked }: { checked: boolean }) {
   return (
@@ -55,6 +56,12 @@ export default function SignupScreen() {
         password,
         email: email.trim() ? email.trim() : undefined,
       });
+      // 알림 받기 동의한 경우에만 권한 요청
+      // await 없이 fire-and-forget — 가입/온보딩 흐름을 절대 막지 않음
+      // 거부/차단/미지원/서버 오류 등 모든 실패는 조용히 무시
+      if (agreeOptional && isPushSupported()) {
+        enablePushNotifications().catch(() => {});
+      }
     } catch (error) {
       setErrorText(
         error instanceof ApiError ? error.message : '회원가입에 실패했어요. 네트워크 상태를 확인해주세요.'
