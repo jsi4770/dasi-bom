@@ -623,3 +623,37 @@ export function getTodaySummary() {
 export function listFaceAnalyses() {
   return request<FaceAnalysisResult[]>('/api/face-analysis/');
 }
+
+/** 온보딩 정보 활용 동의 — 얼굴 사진/건강 데이터 두 항목의 동의 여부·동의 시각. */
+export type UserConsent = {
+  face_analysis_consent: boolean;
+  face_analysis_consented_at: string | null;
+  health_data_consent: boolean;
+  health_data_consented_at: string | null;
+};
+
+/** 아직 한 번도 동의를 안 남긴 사용자는 서버가 404를 주는데, 이건 에러가 아니라 "둘 다 미동의"인
+ * 정상 상태다 — 호출부가 매번 404를 따로 처리하지 않도록 여기서 흡수한다. */
+export async function getConsent(): Promise<UserConsent> {
+  try {
+    return await request<UserConsent>('/api/users/consent/');
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return {
+        face_analysis_consent: false,
+        face_analysis_consented_at: null,
+        health_data_consent: false,
+        health_data_consented_at: null,
+      };
+    }
+    throw error;
+  }
+}
+
+export function saveConsent(data: { face_analysis_consent: boolean; health_data_consent: boolean }) {
+  return request<UserConsent>('/api/users/consent/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
