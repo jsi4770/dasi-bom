@@ -70,16 +70,24 @@ SEVERITY_BINS = (
     (40, 'mild'),
     (65, 'moderate'),
 )
-# ^ 건드리지 말 것. `benchmark_redness_severity_dataset.py` 가 이 함수를 두 가지
-# 다른 목적으로 같이 쓴다 -- (1) 이 모델의 예측 점수를 등급으로, (2) Kaggle 라벨
-# 점수(0/20/40/60/80/100, 실제 0-100 의미 스케일)를 정답 등급으로. REDNESS_MODEL_*
-# 도입 후 예측 분포가 평균 33.7/표준편차 5.2로 좁게 뭉치면서 이 경계로는 대부분
-# '경미'에 몰려 4단계 일치율이 35%->26%로 떨어졌다(확인됨, 아래 참고). 이 경계를
-# 예측 분포에 맞춰 좁히면(30/33/40 시도해봄) 라벨 쪽 매핑까지 같이 망가져서 정답
-# 자체가 틀어진다(라벨 20/40 이 전부 엉뚱한 등급으로 재분류됨) -- 실제로 겪은 버그.
-# 제대로 고치려면 "모델 점수 -> 등급" 과 "라벨 점수 -> 등급"을 별도 함수/상수로
-# 분리해야 한다. 지금은 안 건드리고 회귀 점수(redness_score)만 개선된 상태로 두고,
-# 4단계 배지 재보정은 다음 작업으로 남김(PRD 참고).
+# ^ Kaggle 라벨 점수(0/20/40/60/80/100, 실제 0-100 의미 스케일) -> 정답 등급 매핑
+# 전용. `benchmark_redness_severity_dataset.py`가 label_score에만 쓴다 -- 라벨은
+# 처음부터 저 6개 값 중 하나라 이 경계가 곧 라벨의 실제 등급 정의다. 모델 예측
+# redness_score에는 쓰지 말 것(과거에 여기 썼다가 아래 MODEL_SEVERITY_BINS로
+# 분리한 이유는 그 상수 옆 주석 참고).
+
+# Ridge 회귀 redness_score(평균 33.7, 표준편차 5.2로 SEVERITY_BINS를 잡을 때 쓴
+# 예전 규칙 기반 점수보다 훨씬 좁게 뭉친 분포) 전용 4단계 경계. SEVERITY_BINS를
+# 그대로 썼을 때는 대부분 '경미'에 쏠려 4단계 일치율이 26%까지 떨어졌었다(둘 다
+# 같은 상수를 썼기 때문 -- 예측용으로 좁히면 라벨 쪽 정답 매핑까지 같이 틀어지는
+# 문제가 있어 분리함). `manage.py recalibrate_severity_bins`로 train split(144장,
+# 학습 때 안 쓴 valid와 분리)에서 4구간 정확 탐색(DP)으로 구함, valid(50장,
+# 홀드아웃)에서 4단계 일치율 26% -> 36%.
+MODEL_SEVERITY_BINS = (
+    (18.6, 'normal'),
+    (25.1, 'mild'),
+    (43.0, 'moderate'),
+)
 
 # Overall redness_score: Ridge regression trained on the Kaggle
 # skin_type_classification_dataset train split (144 photos, after dedup/
@@ -100,9 +108,9 @@ SEVERITY_BINS = (
 # make this benchmark not reproduce in production. Retrain with
 # `--include-skin-type` once that field exists.
 #
-# SEVERITY_BINS above was fit against the old A_CHANNEL_LOW/HIGH-scaled
-# average, not this model's output distribution -- the cut points haven't
-# been re-validated against it yet.
+# This model's output distribution gets its own severity cut points --
+# see MODEL_SEVERITY_BINS above, fit separately via `manage.py
+# recalibrate_severity_bins`.
 REDNESS_MODEL_FEATURES = [
     'forehead_a', 'forehead_b', 'forehead_l', 'forehead_highlight',
     'nose_a', 'nose_b', 'nose_l', 'nose_highlight',
@@ -306,7 +314,16 @@ def _ml_redness_score(region_raw_index, region_extra_features, excluded_regions,
 
 
 def _severity_from_score(score):
+    """Kaggle 라벨 점수(0-100 스케일) -> 등급. 모델 예측에는 쓰지 말 것 -- 아래 참고."""
     for threshold, label in SEVERITY_BINS:
+        if score < threshold:
+            return label
+    return 'severe'
+
+
+def _severity_from_model_score(score):
+    """analyze_face_redness()가 실제로 반환하는 redness_score(Ridge 회귀 출력) -> 등급."""
+    for threshold, label in MODEL_SEVERITY_BINS:
         if score < threshold:
             return label
     return 'severe'
@@ -437,7 +454,7 @@ def analyze_face_redness(image_file):
 
     return {
         'redness_score': overall_score,
-        'severity': _severity_from_score(overall_score),
+        'severity': _severity_from_model_score(overall_score),
         'region_scores': region_scores,
         'region_raw_index': region_raw_index,
         # b*/L*/highlight_ratio per region -- not used by the rule-based score,
