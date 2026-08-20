@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
+import { DesktopPhoneFrame } from '@/components/desktop-phone-frame';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
 
 SplashScreen.preventAutoHideAsync();
@@ -15,7 +16,9 @@ export default function RootLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
       <AuthProvider>
-        <RootNavigator />
+        <DesktopPhoneFrame>
+          <RootNavigator />
+        </DesktopPhoneFrame>
       </AuthProvider>
     </ThemeProvider>
   );
