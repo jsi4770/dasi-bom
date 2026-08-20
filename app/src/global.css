@@ -7,3 +7,16 @@
   --font-rounded: 'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif;
   --font-serif: Georgia, 'Times New Roman', serif;
 }
+
+/*
+  네이티브 앱처럼 보이게(특히 데스크톱 폰 프레임 안에서) 스크롤바를 시각적으로 숨긴다.
+  overflow는 그대로 동작해서 스크롤 자체는 막히지 않음 — 트랙/썸만 안 보일 뿐.
+  CSS만으로는 RN 컴포넌트에 직접 못 걸어서 전역으로 적용(웹 전용 파일, 네이티브엔 영향 없음).
+*/
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+*::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Edge(Chromium) */
+}
