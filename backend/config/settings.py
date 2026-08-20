@@ -172,7 +172,7 @@ FACE_LANDMARKER_MODEL_PATH = BASE_DIR / 'ml_models' / 'face_landmarker.task'
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 GEMINI_CHAT_MODEL = os.environ.get('GEMINI_CHAT_MODEL', 'gemini-3.1-flash-lite')
 GEMINI_TTS_MODEL = os.environ.get('GEMINI_TTS_MODEL', 'gemini-2.5-flash-preview-tts')
-GEMINI_TTS_VOICE = os.environ.get('GEMINI_TTS_VOICE', 'Kore')
+GEMINI_TTS_VOICE = os.environ.get('GEMINI_TTS_VOICE', 'Leda')
 
 
 # Web Push (apps.notifications) — VAPID

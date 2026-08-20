@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { WarmBottomSheet } from '@/components/warm/warm-bottom-sheet';
 import { WarmButton } from '@/components/warm/warm-button';
 import { WarmCard } from '@/components/warm/warm-card';
+import { WarmConfirmSheet } from '@/components/warm/warm-confirm-sheet';
 import { WarmScreen } from '@/components/warm/warm-screen';
 import { WarmSlider } from '@/components/warm/warm-slider';
 import {
@@ -18,6 +19,7 @@ import {
   MOCK_ROUTINE_STATUS,
 } from '@/constants/mock-data';
 import { blobDecorationStyle, checkInScaleColor, Warm } from '@/constants/theme';
+import { useConsent } from '@/hooks/use-consent';
 import {
   ApiError,
   getTodayCheckIn,
@@ -91,10 +93,13 @@ type RecordRowProps = {
   completed: boolean;
   tone: 'accent' | 'default';
   onPress: () => void;
+  /** 동의가 필요한 항목인데 아직 동의 전이면 흐리게 — onPress는 그대로 눌려서(막지 않고)
+   * 호출부가 동의 안내 팝업을 띄울지 판단한다. RN의 disabled를 쓰면 onPress 자체가 안 눌린다. */
+  dimmed?: boolean;
 };
 
 // 홈 "오늘의 기록" 그룹의 증상·수면·사진 3개 행 — 완료 여부(completed)는 항상 실제 API 응답으로만 결정한다.
-function RecordRow({ title, subtitle, completed, tone, onPress }: RecordRowProps) {
+function RecordRow({ title, subtitle, completed, tone, onPress, dimmed }: RecordRowProps) {
   const accentTone = tone === 'accent';
   return (
     <Pressable
@@ -104,6 +109,7 @@ function RecordRow({ title, subtitle, completed, tone, onPress }: RecordRowProps
       style={({ pressed }) => [
         styles.recordRow,
         { backgroundColor: accentTone ? Warm.secondarySoft : Warm.backgroundSubtle },
+        dimmed && styles.recordRowDimmed,
         pressed && styles.pressed,
       ]}>
       <CheckDot done={completed} tone={tone} />
@@ -176,6 +182,19 @@ export default function HomeScreen() {
   const [sleepQuality, setSleepQuality] = useState(DEFAULT_CHECKIN_SCALE);
   const [savingSleep, setSavingSleep] = useState(false);
   const [sleepError, setSleepError] = useState<string | null>(null);
+
+  const { faceAnalysisConsent, loading: consentLoading } = useConsent();
+  const [faceConsentGateVisible, setFaceConsentGateVisible] = useState(false);
+
+  function handlePressFacePhoto() {
+    // 로딩 중엔 아직 동의 여부를 모르니 일단 정상 진입시킨다 — 진입 자체는 face-capture 화면이
+    // 아니라 여기서만 막는 게 지금 범위라, 확인 전에 막아버리면 매번 잠깐 깜빡이며 막히는 것처럼 보인다.
+    if (!consentLoading && !faceAnalysisConsent) {
+      setFaceConsentGateVisible(true);
+      return;
+    }
+    router.push('/face-capture');
+  }
 
   // 홈은 탭 루트라 마운트된 채로 유지되므로, 다른 화면을 다녀온 뒤 카드 상태가 그대로 남지 않도록
   // 포커스될 때마다 다시 불러온다. 각 요청은 독립적으로 실패해도(비로그인 등) 조용히 미완료/빈 상태로
@@ -307,7 +326,8 @@ export default function HomeScreen() {
             subtitle={photoSubtitle(photoStatus)}
             completed={photoStatus?.completedToday ?? false}
             tone="default"
-            onPress={() => router.push('/face-capture')}
+            dimmed={!consentLoading && !faceAnalysisConsent}
+            onPress={handlePressFacePhoto}
           />
         </View>
         <ThemedText style={styles.recordFootnote}>세 가지 기록이 모이면 리포트에서 함께 볼 수 있어요.</ThemedText>
@@ -472,6 +492,18 @@ export default function HomeScreen() {
 
         <WarmButton label={savingSleep ? '저장하는 중…' : '기록 저장하기'} onPress={handleSaveSleep} />
       </WarmBottomSheet>
+
+      <WarmConfirmSheet
+        visible={faceConsentGateVisible}
+        onClose={() => setFaceConsentGateVisible(false)}
+        title="얼굴 분석 기능을 사용하려면"
+        message="정보 활용에 동의가 필요해요."
+        confirmLabel="동의하러 가기"
+        onConfirm={() => {
+          setFaceConsentGateVisible(false);
+          router.push({ pathname: '/onboarding/consent', params: { redirectTo: '/face-capture' } });
+        }}
+      />
     </WarmScreen>
   );
 }
@@ -572,6 +604,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderRadius: 18,
+  },
+  recordRowDimmed: {
+    opacity: 0.4,
   },
   recordDot: {
     width: 30,
