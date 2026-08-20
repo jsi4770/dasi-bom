@@ -19,7 +19,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SymbolView } from 'expo-symbols';
 
@@ -86,6 +86,12 @@ export default function ChatScreen() {
   // 재생은 여전히 사용자가 버튼을 눌러야만 시작된다(자동재생 아님). 진행 중인 요청까지 Promise로
   // 캐싱해서, 미리 받기가 끝나기 전에 버튼을 눌러도 같은 요청을 공유하고 중복 호출하지 않는다.
   const speechCacheRef = useRef<Map<number, Promise<string>>>(new Map());
+
+  const insets = useSafeAreaInsets();
+  // 안드로이드는 SafeAreaView의 bottom edge 패딩만으로는 제스처 내비게이션 바 영역을
+  // 완전히 피하지 못해 입력창(마이크·텍스트·전송)이 일부 가려지는 경우가 있어, 입력 영역에
+  // insets.bottom만큼 추가 여백을 더해준다. iOS/웹은 기존 레이아웃 그대로 둔다.
+  const inputAreaPlatformStyle = Platform.select({ android: { paddingBottom: insets.bottom } });
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
@@ -295,6 +301,7 @@ export default function ChatScreen() {
         )}
 
         <KeyboardAvoidingView
+          style={inputAreaPlatformStyle}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Spacing.four}>
           {recorderState.isRecording ? (
