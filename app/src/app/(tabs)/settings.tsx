@@ -7,6 +7,7 @@ import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-
 import { ThemedText } from '@/components/themed-text';
 import { WarmBottomSheet } from '@/components/warm/warm-bottom-sheet';
 import { WarmButton } from '@/components/warm/warm-button';
+import { WarmCard } from '@/components/warm/warm-card';
 import { WarmInfoNote } from '@/components/warm/warm-info-note';
 import { WarmScreen } from '@/components/warm/warm-screen';
 import { blobDecorationStyle, Warm } from '@/constants/theme';
@@ -42,12 +43,12 @@ function pushStatusLabel(state: PushUiState): string {
   }
 }
 
-function ChevronRight() {
+function ChevronRight({ color = Warm.textDeep }: { color?: string }) {
   return (
     <SymbolView
       name={{ ios: 'chevron.right', android: 'arrow_forward', web: 'arrow_forward' }}
-      size={14}
-      tintColor={Warm.textDeep}
+      size={16}
+      tintColor={color}
     />
   );
 }
@@ -62,6 +63,22 @@ function summarizeReminders(
   const items = reminders.filter((r) => r.type === type);
   if (items.length === 0) return '아직 없어요 · 눌러서 추가해보세요';
   return `${items.length}개 · ${items.map((r) => formatTimeLabel(r.time)).join(', ')}`;
+}
+
+function hasReminders(reminders: TodayReminder[] | null, type: TodayReminder['type']) {
+  return !!reminders && reminders.some((r) => r.type === type);
+}
+
+/** 홈의 "오늘의 루틴" 카드와 같은 원형 완료 표시 — 리마인더가 하나라도 등록돼 있으면 채워진
+ * 원(체크), 없으면 빈 원으로 보여줘 텍스트를 읽지 않아도 설정 여부가 한눈에 들어오게 한다. */
+function RowDot({ filled }: { filled: boolean }) {
+  return (
+    <View style={[styles.rowDot, filled && styles.rowDotFilled]}>
+      {filled && (
+        <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} size={15} tintColor="#ffffff" />
+      )}
+    </View>
+  );
 }
 
 export default function SettingsScreen() {
@@ -158,10 +175,13 @@ export default function SettingsScreen() {
 
   const accountLabel = user?.username === 'demo' ? '둘러보기 중' : user?.email || user?.username || '';
   const version = Constants.expoConfig?.version ?? '-';
+  const reminderCount = reminders?.length ?? null;
 
   return (
     // 50대 사용자 대상 설정 화면: 홈/돌봄과 동일하게 헤더 없이 본문 헤드라인으로 시작하고,
     // 실제 목적지가 없는 항목(이용약관 등)에는 화살표를 붙이지 않아 "눌러도 아무 일 없는" 탭을 피한다.
+    // 항목 그룹은 홈의 "오늘의 루틴" 카드와 동일하게 테두리 없는 카드 하나로 묶어, 같은 화면 안에서도
+    // 어디까지가 한 묶음인지 시각적으로 바로 구분되게 한다.
     <WarmScreen>
       <View style={styles.heroBlock}>
         <View style={styles.heroBlob} />
@@ -172,12 +192,18 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.section}>
-        <ThemedText style={styles.sectionTitle}>알림·루틴</ThemedText>
-        <View>
+        <View style={styles.sectionHeaderRow}>
+          <ThemedText style={styles.sectionTitle}>알림·루틴</ThemedText>
+          {reminderCount !== null && !remindersFailed && (
+            <ThemedText style={styles.sectionHeaderMeta}>총 {reminderCount}개</ThemedText>
+          )}
+        </View>
+        <WarmCard bordered={false} style={styles.noPad}>
           <Pressable
             onPress={() => openReminders('medication')}
             accessibilityRole="button"
             style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+            <RowDot filled={hasReminders(reminders, 'medication')} />
             <View style={styles.rowTextBlock}>
               <ThemedText style={styles.rowLabel}>복약·영양제</ThemedText>
               <ThemedText style={styles.rowValue}>
@@ -190,6 +216,7 @@ export default function SettingsScreen() {
             onPress={() => openReminders('mindfulness')}
             accessibilityRole="button"
             style={({ pressed }) => [styles.row, styles.rowLast, pressed && styles.pressed]}>
+            <RowDot filled={hasReminders(reminders, 'mindfulness')} />
             <View style={styles.rowTextBlock}>
               <ThemedText style={styles.rowLabel}>명상·스트레칭</ThemedText>
               <ThemedText style={styles.rowValue}>
@@ -198,7 +225,7 @@ export default function SettingsScreen() {
             </View>
             <ChevronRight />
           </Pressable>
-        </View>
+        </WarmCard>
         <ThemedText style={styles.helperNote}>
           각 항목을 누르시면 시간을 바꾸거나 새로 추가하실 수 있어요.
         </ThemedText>
@@ -207,31 +234,33 @@ export default function SettingsScreen() {
       {Platform.OS === 'web' && (
         <View style={styles.section}>
           <ThemedText style={styles.sectionTitle}>브라우저 알림</ThemedText>
-          <View style={[styles.row, styles.rowLast]}>
-            <View style={styles.rowTextBlock}>
-              <ThemedText style={styles.rowLabel}>리마인더 알림 받기</ThemedText>
-              <ThemedText style={styles.rowValue}>{pushStatusLabel(pushState)}</ThemedText>
+          <WarmCard bordered={false} style={styles.noPad}>
+            <View style={[styles.row, styles.rowLast]}>
+              <View style={styles.rowTextBlock}>
+                <ThemedText style={styles.rowLabel}>리마인더 알림 받기</ThemedText>
+                <ThemedText style={styles.rowValue}>{pushStatusLabel(pushState)}</ThemedText>
+              </View>
+              {pushState === 'processing' ? (
+                <ActivityIndicator color={Warm.primary} />
+              ) : pushState === 'on' || pushState === 'off' ? (
+                <Pressable
+                  onPress={handleTogglePush}
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked: pushState === 'on' }}
+                  accessibilityLabel="리마인더 알림 받기"
+                  style={({ pressed }) => [
+                    styles.pushToggle,
+                    pushState === 'on' && styles.pushToggleOn,
+                    pressed && styles.pressed,
+                  ]}>
+                  <ThemedText
+                    style={[styles.pushToggleLabel, pushState === 'on' && styles.pushToggleLabelOn]}>
+                    {pushState === 'on' ? '켜짐' : '꺼짐'}
+                  </ThemedText>
+                </Pressable>
+              ) : null}
             </View>
-            {pushState === 'processing' ? (
-              <ActivityIndicator color={Warm.primary} />
-            ) : pushState === 'on' || pushState === 'off' ? (
-              <Pressable
-                onPress={handleTogglePush}
-                accessibilityRole="switch"
-                accessibilityState={{ checked: pushState === 'on' }}
-                accessibilityLabel="리마인더 알림 받기"
-                style={({ pressed }) => [
-                  styles.pushToggle,
-                  pushState === 'on' && styles.pushToggleOn,
-                  pressed && styles.pressed,
-                ]}>
-                <ThemedText
-                  style={[styles.pushToggleLabel, pushState === 'on' && styles.pushToggleLabelOn]}>
-                  {pushState === 'on' ? '켜짐' : '꺼짐'}
-                </ThemedText>
-              </Pressable>
-            ) : null}
-          </View>
+          </WarmCard>
           <ThemedText style={styles.helperNote}>
             {pushState === 'denied'
               ? '브라우저 주소창 옆 자물쇠 아이콘에서 알림 권한을 허용하면 다시 켤 수 있어요.'
@@ -243,26 +272,30 @@ export default function SettingsScreen() {
 
       <View style={styles.section}>
         <ThemedText style={styles.sectionTitle}>계정</ThemedText>
-        <View style={[styles.row, styles.rowLast]}>
-          <View style={styles.rowTextBlock}>
-            <ThemedText style={styles.rowLabel}>로그인 계정</ThemedText>
-            <ThemedText style={styles.rowValue}>{accountLabel}</ThemedText>
+        <WarmCard bordered={false} style={styles.noPad}>
+          <View style={[styles.plainRow, styles.rowLast]}>
+            <View style={styles.rowTextBlock}>
+              <ThemedText style={styles.rowLabel}>로그인 계정</ThemedText>
+              <ThemedText style={styles.rowValue}>{accountLabel}</ThemedText>
+            </View>
           </View>
-        </View>
+        </WarmCard>
       </View>
 
       <View style={styles.section}>
         <ThemedText style={styles.sectionTitle}>앱 정보</ThemedText>
-        <View style={styles.inlineRow}>
-          <ThemedText style={styles.rowLabel}>버전</ThemedText>
-          <ThemedText style={styles.rowValue}>{version}</ThemedText>
-        </View>
-        <View style={[styles.row, styles.rowLast]}>
-          <View style={styles.rowTextBlock}>
-            <ThemedText style={styles.rowLabel}>이용약관 · 개인정보 처리방침</ThemedText>
-            <ThemedText style={styles.rowValue}>기록을 어떻게 보관하는지 적어두었어요</ThemedText>
+        <WarmCard bordered={false} style={styles.noPad}>
+          <View style={styles.inlineRow}>
+            <ThemedText style={styles.rowLabel}>버전</ThemedText>
+            <ThemedText style={styles.rowValue}>{version}</ThemedText>
           </View>
-        </View>
+          <View style={[styles.plainRow, styles.rowLast]}>
+            <View style={styles.rowTextBlock}>
+              <ThemedText style={styles.rowLabel}>이용약관 · 개인정보 처리방침</ThemedText>
+              <ThemedText style={styles.rowValue}>기록을 어떻게 보관하는지 적어두었어요</ThemedText>
+            </View>
+          </View>
+        </WarmCard>
 
         <WarmInfoNote text="다시-봄의 기록은 참고용이며, 의료적 진단이나 처방을 대신하지 않아요." />
       </View>
@@ -297,6 +330,11 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.7,
   },
+  noPad: {
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    gap: 0,
+  },
   heroBlock: {
     position: 'relative',
     gap: 8,
@@ -322,24 +360,41 @@ const styles = StyleSheet.create({
     color: Warm.text,
   },
   section: {
-    gap: 4,
+    gap: 12,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   sectionTitle: {
-    fontSize: 17,
+    fontSize: 19,
     fontWeight: '700',
     color: Warm.textDeep,
-    marginBottom: 8,
+  },
+  sectionHeaderMeta: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: Warm.textSecondary,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    minHeight: 68,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: Warm.border,
+    minHeight: 76,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: Warm.border,
   },
   rowLast: {
+    borderBottomWidth: 0,
+  },
+  plainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 68,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
     borderBottomWidth: 1,
     borderBottomColor: Warm.border,
   },
@@ -348,9 +403,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     minHeight: 56,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: Warm.border,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: Warm.border,
+  },
+  rowDot: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: 'rgba(15, 61, 44, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  rowDotFilled: {
+    borderWidth: 0,
+    backgroundColor: Warm.primary,
   },
   rowTextBlock: {
     flex: 1,
@@ -358,22 +427,20 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   rowLabel: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
     color: Warm.textDeep,
   },
   rowValue: {
     fontSize: 15,
     lineHeight: 21,
-    color: Warm.text,
-    opacity: 0.8,
+    color: Warm.textSecondary,
   },
   helperNote: {
     fontSize: 15,
     lineHeight: 22,
     color: Warm.text,
     opacity: 0.78,
-    marginTop: 12,
   },
   pushToggle: {
     minWidth: 64,
@@ -384,7 +451,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1.5,
     borderColor: Warm.border,
-    backgroundColor: Warm.card,
+    backgroundColor: Warm.background,
   },
   pushToggleOn: {
     backgroundColor: Warm.primary,
@@ -402,7 +469,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     color: Warm.secondaryStrong,
-    marginTop: 8,
   },
   spacer: {
     flex: 1,
