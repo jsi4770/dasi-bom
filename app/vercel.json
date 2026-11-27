@@ -1,6 +1,6 @@
 {
   "cleanUrls": true,
   "trailingSlash": false,
-  "buildCommand": "npx expo export -p web",
+  "buildCommand": "EXPO_PUBLIC_DEMO_MODE=true npx expo export -p web",
   "outputDirectory": "dist"
 }

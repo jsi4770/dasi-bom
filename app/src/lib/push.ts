@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 
 import { getVapidPublicKey, subscribePush, unsubscribePush } from '@/lib/api';
+import { isDemoMode } from '@/lib/demo/config';
 
 const SERVICE_WORKER_URL = '/sw.js';
 
@@ -8,6 +9,8 @@ const SERVICE_WORKER_URL = '/sw.js';
  * iOS/Android에는 대응 개념이 없다 — Platform.OS로 먼저 걸러야 네이티브에서
  * `navigator`/`Notification` 참조 자체가 나지 않는다. */
 export function isPushSupported(): boolean {
+  // 데모 모드에는 푸시 서버가 없어 구독을 만들 수 없다.
+  if (isDemoMode()) return false;
   if (Platform.OS !== 'web') return false;
   if (typeof navigator === 'undefined' || typeof window === 'undefined') return false;
   return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;

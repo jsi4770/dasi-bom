@@ -2,6 +2,8 @@ import { File, Paths } from 'expo-file-system';
 import { Platform } from 'react-native';
 
 import { clearTokens, getTokens, saveAccessToken, saveTokens } from '@/lib/auth-storage';
+import { isDemoMode } from '@/lib/demo/config';
+import { demoFetch } from '@/lib/demo/server';
 
 export type ChatSession = {
   id: number;
@@ -87,6 +89,10 @@ async function authorizedFetch(
   init: RequestInit = {},
   { skipAuth = false }: RequestExtras = {}
 ): Promise<Response> {
+  // 데모 모드: 백엔드 없이 인메모리 목업이 응답한다(EXPO_PUBLIC_DEMO_MODE=true 빌드).
+  if (isDemoMode()) {
+    return demoFetch(path, init);
+  }
   const url = `${getApiBaseUrl()}${path}`;
   const headers = await buildHeaders(init.headers, skipAuth);
   const response = await fetch(url, { ...init, headers });
